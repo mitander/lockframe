@@ -2,6 +2,7 @@
 
 **Wire Format:** Raw Binary Header (Big Endian) + CBOR Payload
 **Cryptography:** MLS (RFC 9420) + XChaCha20-Poly1305
+**Version:** 0.1.0
 
 ---
 

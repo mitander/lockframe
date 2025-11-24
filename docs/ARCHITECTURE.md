@@ -24,14 +24,9 @@ Traditional E2EE messaging treats servers as passive relays. This creates operat
 - Content moderation requires client cooperation
 - Federation lacks authoritative ordering
 
-Solution: Servers are first-class MLS participants through the External Senders extension (RFC 9420 §12.1). This enables:
+Solution: Servers are first-class MLS participants through the External Senders extension (RFC 9420 §12.1).
 
-```
-Traditional:  Client → Server (relay) → Client
-Sunder:       Client ↔ Server (participant) ↔ Client
-```
-
-The server can:
+This allows the server to:
 
 - Generate MLS Commits to remove bad actors (cryptographic ban)
 - Enforce linear ordering (sequencer pattern)
@@ -73,35 +68,13 @@ This provides:
 
 ### 1.3 Deterministic Simulation Testing
 
-To ensure correctness, every component is testable in deterministic simulation:
+To ensure correctness, every component is testable in deterministic simulation.
 
-```rust
-// Example from our test harness
-#[test]
-fn test_split_brain_recovery() {
-    let mut sim = turmoil::Builder::new()
-        .simulation_duration(Duration::from_secs(60))
-        .build();
+This gives us reproducable:
 
-    // Partition network at t=10s
-    sim.partition("hub1", "hub2");
-
-    // Both hubs receive commits
-    sim.client("alice").send_commit();
-    sim.client("bob").send_commit();
-
-    // Heal partition at t=30s
-    sim.heal_all();
-
-    // Verify convergence
-    assert_eq!(
-        sim.hub("hub1").tree_hash(),
-        sim.hub("hub2").tree_hash()
-    );
-}
-```
-
-Every race condition, network partition, and edge case should be reproducible.
+- Race condition
+- Network partition
+- Edge cases
 
 ---
 
@@ -486,9 +459,9 @@ The NSE cannot process MLS Commits due to memory limits. We solve this via **Pus
 
 **Security Benefits:**
 
-- ✅ **Battery Drain Prevention:** Only the target device can decrypt its notification. Malicious group members cannot spam notifications to other members because they don't have the private keys.
-- ✅ **Server Rate Limiting:** The server can rate-limit push notifications by sender without breaking encryption.
-- ✅ **No Key Sharing:** Private keys never leave the device or enter the MLS key schedule.
+- **Battery Drain Prevention:** Only the target device can decrypt its notification. Malicious group members cannot spam notifications to other members because they don't have the private keys.
+- **Server Rate Limiting:** The server can rate-limit push notifications by sender without breaking encryption.
+- **No Key Sharing:** Private keys never leave the device or enter the MLS key schedule.
 
 **Trade-offs:**
 

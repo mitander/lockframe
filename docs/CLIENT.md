@@ -50,7 +50,7 @@ struct CryptoAllocator {
 const MLS_TREE_MAX_SIZE: usize = 2 * 1024 * 1024;  // 2MB
 const MESSAGE_MAX_SIZE: usize = 16 * 1024;         // 16KB (regular app messages)
 
-// NOTE: Large payloads (media, CAS) use streaming or heap allocation to match
+// Note: Large payloads (media, CAS) use streaming or heap allocation to match
 // the protocol's 16MB limit (FrameHeader::MAX_PAYLOAD_SIZE). The MESSAGE_MAX_SIZE
 // pool is optimized for frequent text messages, not bulk transfers.
 ```
@@ -70,6 +70,7 @@ strip = true
 ```
 
 **Security Rationale:**
+
 - `panic = "abort"` prevents unwinding, which can leave sensitive data in crash logs
 - Stack unwinding during panics can expose key material in memory dumps
 - Aborting immediately terminates the process without generating detailed backtraces
@@ -107,6 +108,7 @@ impl Drop for MLSPrivateKey {
 ```
 
 **Why this matters:**
+
 1. **Memory Forensics:** Prevents key extraction from memory dumps or swap files
 2. **Use-After-Free Protection:** Ensures stale memory doesn't contain keys
 3. **Cold Boot Attacks:** Reduces the window for RAM extraction attacks
