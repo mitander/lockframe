@@ -42,6 +42,17 @@ pub enum ConnectionError {
         elapsed: Duration,
     },
 
+    /// Unsupported protocol version
+    UnsupportedVersion(u8),
+
+    /// Invalid payload for opcode
+    InvalidPayload {
+        /// Expected payload type
+        expected: &'static str,
+        /// Opcode that was received
+        opcode: u16,
+    },
+
     /// Protocol error from frame parsing/validation
     Protocol(String),
 
@@ -64,6 +75,12 @@ impl fmt::Display for ConnectionError {
             Self::IdleTimeout { elapsed } => {
                 write!(f, "idle timeout after {:?}", elapsed)
             },
+            Self::UnsupportedVersion(version) => {
+                write!(f, "unsupported protocol version: {}", version)
+            },
+            Self::InvalidPayload { expected, opcode } => {
+                write!(f, "invalid payload: expected {} for opcode {:#06x}", expected, opcode)
+            },
             Self::Protocol(msg) => write!(f, "protocol error: {}", msg),
             Self::Transport(msg) => write!(f, "transport error: {}", msg),
         }
@@ -81,9 +98,10 @@ impl From<ConnectionError> for io::Error {
             ConnectionError::HandshakeTimeout { .. } | ConnectionError::IdleTimeout { .. } => {
                 io::ErrorKind::TimedOut
             },
-            ConnectionError::InvalidState { .. } | ConnectionError::UnexpectedFrame { .. } => {
-                io::ErrorKind::InvalidData
-            },
+            ConnectionError::InvalidState { .. }
+            | ConnectionError::UnexpectedFrame { .. }
+            | ConnectionError::UnsupportedVersion(_)
+            | ConnectionError::InvalidPayload { .. } => io::ErrorKind::InvalidData,
             ConnectionError::Protocol(_) => io::ErrorKind::InvalidData,
             ConnectionError::Transport(_) => io::ErrorKind::Other,
         };

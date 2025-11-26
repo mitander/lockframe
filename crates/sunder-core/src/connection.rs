@@ -18,15 +18,15 @@
 //! # State Machine
 //!
 //! ```text
-//! ┌──────┐  Hello   ┌──────────┐  Authenticated  ┌──────────────┐
-//! │ Init │─────────>│ Pending  │───────────────>│ Authenticated │
-//! └──────┘          └──────────┘                 └──────────────┘
-//!                        │                              │
-//!                        │ Timeout/Error                │ Goodbye/Timeout
-//!                        ↓                              ↓
-//!                   ┌────────┐                     ┌────────┐
-//!                   │ Closed │<────────────────────│ Closed │
-//!                   └────────┘                     └────────┘
+//! ┌──────┐  Hello   ┌──────────┐  Authenticated  ┌───────────────┐
+//! │ Init │─────────>│ Pending  │────────────────>│ Authenticated │
+//! └──────┘          └──────────┘                 └───────────────┘
+//!                        │                               │
+//!                        │ Timeout/Error                 │ Goodbye/Timeout
+//!                        ↓                               ↓
+//!                   ┌────────┐                      ┌────────┐
+//!                   │ Closed │<─────────────────────│ Closed │
+//!                   └────────┘                      └────────┘
 //! ```
 //!
 //! # Lifecycle
@@ -44,7 +44,10 @@
 
 use std::time::{Duration, Instant};
 
-use sunder_proto::Frame;
+use sunder_proto::{
+    Frame, FrameHeader, Opcode, Payload,
+    payloads::session::{Goodbye, Hello, HelloReply},
+};
 
 use crate::error::ConnectionError;
 
@@ -120,11 +123,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Create a new connection in Init state
-    ///
-    /// # Arguments
-    /// * `now` - Current time (from Environment)
-    /// * `config` - Connection configuration
+    /// Create a new connection in [`ConnectionState::Init`] state
     pub fn new(now: Instant, config: ConnectionConfig) -> Self {
         Self {
             state: ConnectionState::Init,
@@ -147,14 +146,21 @@ impl Connection {
         self.session_id
     }
 
-    /// Transition to Pending state (Hello sent)
+    /// Set session ID (server use: before handling Hello)
     ///
-    /// Returns actions to execute (send Hello frame, update activity).
+    /// The server should generate a random session ID and set it before
+    /// handling an incoming Hello frame. The state machine will use this
+    /// ID when constructing the HelloReply.
+    pub fn set_session_id(&mut self, session_id: u64) {
+        self.session_id = Some(session_id);
+    }
+
+    /// Client: initiate handshake
     ///
-    /// # Arguments
-    /// * `now` - Current time
+    /// Transitions to Pending state and returns SendFrame(Hello) action.
     ///
     /// # Errors
+    ///
     /// Returns `InvalidState` if not in Init state
     pub fn send_hello(&mut self, now: Instant) -> Result<Vec<ConnectionAction>, ConnectionError> {
         if self.state != ConnectionState::Init {
@@ -167,36 +173,10 @@ impl Connection {
         self.state = ConnectionState::Pending;
         self.last_activity = now;
 
-        // Note: The actual Hello frame will be created by the driver
-        // This method just manages state transitions
-        Ok(vec![])
-    }
+        let hello = Payload::Hello(Hello { version: 1, capabilities: vec![], auth_token: None });
+        let frame = hello.into_frame(FrameHeader::new(Opcode::Hello))?;
 
-    /// Transition to Authenticated state (HelloReply received)
-    ///
-    /// # Arguments
-    /// * `session_id` - Session ID assigned by server
-    /// * `now` - Current time
-    ///
-    /// # Errors
-    /// Returns `InvalidState` if not in Pending state
-    pub fn receive_hello_reply(
-        &mut self,
-        session_id: u64,
-        now: Instant,
-    ) -> Result<Vec<ConnectionAction>, ConnectionError> {
-        if self.state != ConnectionState::Pending {
-            return Err(ConnectionError::InvalidState {
-                state: self.state,
-                operation: "receive_hello_reply".to_string(),
-            });
-        }
-
-        self.state = ConnectionState::Authenticated;
-        self.session_id = Some(session_id);
-        self.last_activity = now;
-
-        Ok(vec![])
+        Ok(vec![ConnectionAction::SendFrame(frame)])
     }
 
     /// Transition to Closed state
@@ -213,11 +193,7 @@ impl Connection {
 
     /// Check if connection has timed out
     ///
-    /// # Arguments
-    /// * `now` - Current time
-    ///
-    /// # Returns
-    /// `Some(elapsed)` if timed out, `None` otherwise
+    /// Returns `Some(elapsed)` if timed out, `None` otherwise
     #[must_use]
     pub fn check_timeout(&self, now: Instant) -> Option<Duration> {
         let elapsed = now.duration_since(self.last_activity);
@@ -233,15 +209,11 @@ impl Connection {
 
     /// Tick the state machine - check for timeouts and heartbeats
     ///
-    /// Call this periodically (e.g., every 100ms) to handle:
+    /// Call this periodically to handle:
     /// - Timeout detection
     /// - Heartbeat sending
     ///
-    /// # Arguments
-    /// * `now` - Current time
-    ///
-    /// # Returns
-    /// Actions to execute (send Ping, close connection, etc.)
+    /// Returns actions to execute
     pub fn tick(&mut self, now: Instant) -> Vec<ConnectionAction> {
         let mut actions = Vec::new();
 
@@ -269,21 +241,7 @@ impl Connection {
             };
 
             if should_send {
-                // Create Ping frame - use helper to create header with opcode
-                let mut header_bytes = [0u8; sunder_proto::FrameHeader::SIZE];
-                header_bytes[0..4].copy_from_slice(&sunder_proto::FrameHeader::MAGIC.to_be_bytes());
-                header_bytes[4] = sunder_proto::FrameHeader::VERSION;
-
-                let header = sunder_proto::FrameHeader::from_bytes(&header_bytes)
-                    .expect("valid header")
-                    .to_owned();
-                let mut header_bytes = header.to_bytes();
-                header_bytes[6..8]
-                    .copy_from_slice(&sunder_proto::Opcode::Ping.to_u16().to_be_bytes());
-
-                let ping_header = sunder_proto::FrameHeader::from_bytes(&header_bytes)
-                    .expect("valid ping header")
-                    .to_owned();
+                let ping_header = FrameHeader::new(sunder_proto::Opcode::Ping);
                 let ping_frame = Frame::new(ping_header, Vec::new());
 
                 actions.push(ConnectionAction::SendFrame(ping_frame));
@@ -295,38 +253,127 @@ impl Connection {
         actions
     }
 
-    /// Handle incoming frame
-    ///
     /// Process a frame received from the peer and return actions.
     ///
-    /// # Arguments
-    /// * `frame` - The received frame
-    /// * `now` - Current time
-    ///
-    /// # Returns
-    /// Actions to execute in response
-    ///
     /// # Errors
-    /// Returns error if frame is unexpected for current state
+    ///
+    /// Returns error if frame is unexpected for current state or malformed
     pub fn handle_frame(
         &mut self,
         frame: &Frame,
         now: Instant,
     ) -> Result<Vec<ConnectionAction>, ConnectionError> {
-        // Update activity on any frame received
         self.last_activity = now;
 
-        // Handle based on current state and frame type
-        match (self.state, frame.header.opcode_enum()) {
-            (ConnectionState::Authenticated, Some(sunder_proto::Opcode::Pong)) => {
-                // Pong received - just update activity (already done above)
+        let Some(opcode) = frame.header.opcode_enum() else {
+            return Err(ConnectionError::UnexpectedFrame {
+                state: self.state,
+                opcode: frame.header.opcode(),
+            });
+        };
+
+        match (self.state, opcode) {
+            // Server: receive Hello in Init state
+            (ConnectionState::Init, Opcode::Hello) => {
+                let payload = Payload::from_frame(frame.clone())?;
+
+                match payload {
+                    Payload::Hello(hello) => {
+                        if hello.version != 1 {
+                            return Err(ConnectionError::UnsupportedVersion(hello.version));
+                        }
+
+                        // Server must have session_id set before handling Hello
+                        let Some(session_id) = self.session_id else {
+                            return Err(ConnectionError::Protocol(
+                                "server must set session_id before handling Hello".to_string(),
+                            ));
+                        };
+
+                        self.state = ConnectionState::Authenticated;
+
+                        let reply = Payload::HelloReply(HelloReply {
+                            session_id,
+                            capabilities: vec![],
+                            challenge: None,
+                        });
+
+                        let frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply))?;
+
+                        Ok(vec![ConnectionAction::SendFrame(frame)])
+                    },
+                    _ => Err(ConnectionError::InvalidPayload {
+                        expected: "Hello",
+                        opcode: Opcode::Hello.to_u16(),
+                    }),
+                }
+            },
+
+            // Client: receive HelloReply in Pending state
+            (ConnectionState::Pending, Opcode::HelloReply) => {
+                let payload = Payload::from_frame(frame.clone())?;
+
+                match payload {
+                    Payload::HelloReply(reply) => {
+                        self.state = ConnectionState::Authenticated;
+                        self.session_id = Some(reply.session_id);
+
+                        Ok(vec![]) // No response needed
+                    },
+                    _ => Err(ConnectionError::InvalidPayload {
+                        expected: "HelloReply",
+                        opcode: Opcode::HelloReply.to_u16(),
+                    }),
+                }
+            },
+
+            // Both: Ping when Authenticated
+            (ConnectionState::Authenticated, Opcode::Ping) => {
+                let pong_header = FrameHeader::new(Opcode::Pong);
+                let pong_frame = Frame::new(pong_header, Vec::new());
+                Ok(vec![ConnectionAction::SendFrame(pong_frame)])
+            },
+
+            // Both: Pong when Authenticated
+            (ConnectionState::Authenticated, Opcode::Pong) => {
+                // Activity already updated
                 Ok(vec![])
             },
-            (state, Some(opcode)) => {
-                Err(ConnectionError::UnexpectedFrame { state, opcode: opcode.to_u16() })
+
+            // Both: Goodbye (any state except Closed)
+            (state, Opcode::Goodbye) if state != ConnectionState::Closed => {
+                let payload = Payload::from_frame(frame.clone())?;
+
+                let reason = match payload {
+                    Payload::Goodbye(goodbye) => goodbye.reason,
+                    _ => {
+                        return Err(ConnectionError::InvalidPayload {
+                            expected: "Goodbye",
+                            opcode: Opcode::Goodbye.to_u16(),
+                        });
+                    },
+                };
+
+                self.state = ConnectionState::Closed;
+
+                let reply = Payload::Goodbye(Goodbye { reason: "ack".to_string() });
+                let frame = reply.into_frame(FrameHeader::new(Opcode::Goodbye))?;
+
+                Ok(vec![ConnectionAction::SendFrame(frame), ConnectionAction::Close {
+                    reason: format!("peer goodbye: {}", reason),
+                }])
             },
-            (state, None) => {
-                Err(ConnectionError::UnexpectedFrame { state, opcode: frame.header.opcode() })
+
+            // Both: Error frame
+            (_, Opcode::Error) => {
+                self.state = ConnectionState::Closed;
+
+                Ok(vec![ConnectionAction::Close { reason: "peer error".to_string() }])
+            },
+
+            // Default: unexpected frame for current state
+            (state, opcode) => {
+                Err(ConnectionError::UnexpectedFrame { state, opcode: opcode.to_u16() })
             },
         }
     }
@@ -348,10 +395,17 @@ mod tests {
         // Send Hello
         let actions = conn.send_hello(t0).unwrap();
         assert_eq!(conn.state(), ConnectionState::Pending);
-        assert!(actions.is_empty()); // State transition only
+        assert_eq!(actions.len(), 1); // Returns SendFrame(Hello) action
+        assert!(matches!(actions[0], ConnectionAction::SendFrame(_)));
 
         // Receive HelloReply
-        let actions = conn.receive_hello_reply(12345, t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        let actions = conn.handle_frame(&reply_frame, t0).unwrap();
         assert_eq!(conn.state(), ConnectionState::Authenticated);
         assert_eq!(conn.session_id(), Some(12345));
         assert!(actions.is_empty());
@@ -370,7 +424,13 @@ mod tests {
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
-        conn.receive_hello_reply(12345, t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
 
         // Tick immediately - should send first heartbeat
         let t1 = t0;
@@ -424,7 +484,13 @@ mod tests {
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
-        conn.receive_hello_reply(12345, t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
 
         // Check timeout immediately - should be fine
         assert!(conn.check_timeout(t0).is_none());
@@ -447,13 +513,51 @@ mod tests {
         let mut conn = Connection::new(t0, ConnectionConfig::default());
 
         // Can't receive HelloReply from Init
-        let result = conn.receive_hello_reply(12345, t0);
-        assert!(matches!(result, Err(ConnectionError::InvalidState { .. })));
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        let result = conn.handle_frame(&reply_frame, t0);
+        assert!(matches!(result, Err(ConnectionError::UnexpectedFrame { .. })));
 
         // Can't send Hello twice
         conn.send_hello(t0).unwrap();
         let result = conn.send_hello(t0);
         assert!(matches!(result, Err(ConnectionError::InvalidState { .. })));
+    }
+
+    #[test]
+    fn handle_ping_responds_with_pong() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Move to authenticated
+        conn.send_hello(t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
+
+        // Create a Ping frame
+        let ping_header = FrameHeader::new(sunder_proto::Opcode::Ping);
+        let ping_frame = Frame::new(ping_header, Vec::new());
+
+        // Handle Ping - should return Pong action
+        let actions = conn.handle_frame(&ping_frame, t0).unwrap();
+        assert_eq!(actions.len(), 1);
+
+        match &actions[0] {
+            ConnectionAction::SendFrame(frame) => {
+                assert_eq!(frame.header.opcode_enum(), Some(sunder_proto::Opcode::Pong));
+                assert_eq!(frame.payload.len(), 0);
+            },
+            _ => panic!("Expected SendFrame action with Pong"),
+        }
     }
 
     #[test]
@@ -463,21 +567,16 @@ mod tests {
 
         // Move to authenticated
         conn.send_hello(t0).unwrap();
-        conn.receive_hello_reply(12345, t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
 
         // Create a Pong frame
-        let mut header_bytes = [0u8; sunder_proto::FrameHeader::SIZE];
-        header_bytes[0..4].copy_from_slice(&sunder_proto::FrameHeader::MAGIC.to_be_bytes());
-        header_bytes[4] = sunder_proto::FrameHeader::VERSION;
-
-        let header =
-            sunder_proto::FrameHeader::from_bytes(&header_bytes).expect("valid header").to_owned();
-        let mut header_bytes = header.to_bytes();
-        header_bytes[6..8].copy_from_slice(&sunder_proto::Opcode::Pong.to_u16().to_be_bytes());
-
-        let pong_header = sunder_proto::FrameHeader::from_bytes(&header_bytes)
-            .expect("valid pong header")
-            .to_owned();
+        let pong_header = FrameHeader::new(sunder_proto::Opcode::Pong);
         let pong_frame = Frame::new(pong_header, Vec::new());
 
         // Handle Pong
@@ -488,5 +587,155 @@ mod tests {
         // Activity should be updated (not timed out)
         let t2 = t1 + Duration::from_secs(40); // 40s after Pong, but only 10s from last activity
         assert!(conn.check_timeout(t2).is_none());
+    }
+
+    #[test]
+    fn handle_ping_before_authenticated() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Create a Ping frame
+        let ping_header = FrameHeader::new(sunder_proto::Opcode::Ping);
+        let ping_frame = Frame::new(ping_header, Vec::new());
+
+        // Should fail - not authenticated yet
+        let result = conn.handle_frame(&ping_frame, t0);
+        assert!(matches!(result, Err(ConnectionError::UnexpectedFrame { .. })));
+    }
+
+    #[test]
+    fn server_handle_hello() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Server sets session ID
+        conn.set_session_id(0x1234_5678_9ABC_DEF0);
+
+        // Create Hello frame
+        let hello = Payload::Hello(Hello { version: 1, capabilities: vec![], auth_token: None });
+        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+
+        // Handle Hello - should return HelloReply action
+        let actions = conn.handle_frame(&hello_frame, t0).unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(conn.state(), ConnectionState::Authenticated);
+        assert_eq!(conn.session_id(), Some(0x1234_5678_9ABC_DEF0));
+
+        match &actions[0] {
+            ConnectionAction::SendFrame(frame) => {
+                assert_eq!(frame.header.opcode_enum(), Some(Opcode::HelloReply));
+
+                // Verify HelloReply contains correct session_id
+                let payload = Payload::from_frame(frame.clone()).unwrap();
+                match payload {
+                    Payload::HelloReply(reply) => {
+                        assert_eq!(reply.session_id, 0x1234_5678_9ABC_DEF0);
+                    },
+                    _ => panic!("Expected HelloReply payload"),
+                }
+            },
+            _ => panic!("Expected SendFrame action"),
+        }
+    }
+
+    #[test]
+    fn server_hello_without_session_id() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Don't set session ID - should fail
+
+        let hello = Payload::Hello(Hello { version: 1, capabilities: vec![], auth_token: None });
+        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+
+        let result = conn.handle_frame(&hello_frame, t0);
+        assert!(matches!(result, Err(ConnectionError::Protocol(_))));
+    }
+
+    #[test]
+    fn server_hello_unsupported_version() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+        conn.set_session_id(12345);
+
+        let hello = Payload::Hello(Hello {
+            version: 99, // Unsupported version
+            capabilities: vec![],
+            auth_token: None,
+        });
+        let hello_frame = hello.into_frame(FrameHeader::new(Opcode::Hello)).unwrap();
+
+        let result = conn.handle_frame(&hello_frame, t0);
+        assert!(matches!(result, Err(ConnectionError::UnsupportedVersion(99))));
+    }
+
+    #[test]
+    fn handle_goodbye_authenticated() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Move to authenticated
+        conn.send_hello(t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
+
+        // Send Goodbye
+        let goodbye = Payload::Goodbye(Goodbye { reason: "client shutdown".to_string() });
+        let goodbye_frame = goodbye.into_frame(FrameHeader::new(Opcode::Goodbye)).unwrap();
+
+        let actions = conn.handle_frame(&goodbye_frame, t0).unwrap();
+        assert_eq!(conn.state(), ConnectionState::Closed);
+        assert_eq!(actions.len(), 2);
+
+        // Should send Goodbye ack and Close
+        assert!(matches!(actions[0], ConnectionAction::SendFrame(_)));
+        assert!(matches!(actions[1], ConnectionAction::Close { .. }));
+    }
+
+    #[test]
+    fn handle_goodbye_pending() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Move to pending
+        conn.send_hello(t0).unwrap();
+
+        // Send Goodbye while still pending
+        let goodbye = Payload::Goodbye(Goodbye { reason: "timeout".to_string() });
+        let goodbye_frame = goodbye.into_frame(FrameHeader::new(Opcode::Goodbye)).unwrap();
+
+        let actions = conn.handle_frame(&goodbye_frame, t0).unwrap();
+        assert_eq!(conn.state(), ConnectionState::Closed);
+        assert_eq!(actions.len(), 2);
+    }
+
+    #[test]
+    fn handle_error_frame() {
+        let t0 = Instant::now();
+        let mut conn = Connection::new(t0, ConnectionConfig::default());
+
+        // Move to authenticated
+        conn.send_hello(t0).unwrap();
+        let reply = Payload::HelloReply(HelloReply {
+            session_id: 12345,
+            capabilities: vec![],
+            challenge: None,
+        });
+        let reply_frame = reply.into_frame(FrameHeader::new(Opcode::HelloReply)).unwrap();
+        conn.handle_frame(&reply_frame, t0).unwrap();
+
+        // Receive Error frame
+        let error_header = FrameHeader::new(Opcode::Error);
+        let error_frame = Frame::new(error_header, Vec::new());
+
+        let actions = conn.handle_frame(&error_frame, t0).unwrap();
+        assert_eq!(conn.state(), ConnectionState::Closed);
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(actions[0], ConnectionAction::Close { .. }));
     }
 }
