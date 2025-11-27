@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d52afafb840211684b84eceef127161978ff7641c436413445c843ddc7add3c3 # shrinks to config = ConnectionConfig { handshake_timeout: 1s, idle_timeout: 1s, heartbeat_interval: 1s }, session_id = 0

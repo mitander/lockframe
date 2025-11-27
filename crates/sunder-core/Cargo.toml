@@ -23,6 +23,7 @@ proptest = "1.5"
 
 # Snapshot testing
 insta = "1.41"
+hex = "0.4"
 
 [lints]
 workspace = true
