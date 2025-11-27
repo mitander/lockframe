@@ -35,15 +35,18 @@
 //!
 //! # Modules
 //!
+//! - [`connection`]: Connection state machine (handshake, heartbeat, timeout)
+//! - [`mls`]: MLS group state machine (proposals, commits, messages)
 //! - [`env`]: Environment abstraction (time, RNG)
 //! - [`transport`]: Transport abstraction (streams)
-//! - [`state`]: Protocol state machines (connection, MLS, etc.) [TODO]
+//! - [`error`]: Connection error types
 //! - [`crypto`]: Cryptographic operations (sender keys, etc.) [TODO]
 
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod connection;
 pub mod env;
 pub mod error;
+pub mod mls;
 pub mod transport;

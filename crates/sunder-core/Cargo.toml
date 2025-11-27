@@ -17,6 +17,10 @@ tokio = { version = "1", default-features = false, features = ["io-util", "time"
 # Error handling
 thiserror = "2.0"
 
+# MLS (Messaging Layer Security)
+mls-rs = "0.51"
+mls-rs-crypto-rustcrypto = "0.19"
+
 [dev-dependencies]
 # Property-based testing
 proptest = "1.5"
