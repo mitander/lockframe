@@ -77,8 +77,7 @@ impl Environment for SimEnv {
     type Instant = std::time::Instant;
 
     fn now(&self) -> Self::Instant {
-        // Use tokio's Instant which works with turmoil
-        tokio::time::Instant::now().into_std()
+        tokio::time::Instant::now().into()
     }
 
     async fn sleep(&self, duration: Duration) {

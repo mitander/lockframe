@@ -7,10 +7,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-mod sim_env;
-mod sim_transport;
-
 pub mod scenario;
+pub mod sim_env;
+pub mod sim_transport;
 
 pub use sim_env::SimEnv;
 pub use sim_transport::SimTransport;
