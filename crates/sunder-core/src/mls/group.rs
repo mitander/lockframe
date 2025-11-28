@@ -5,6 +5,7 @@ use std::time::Instant;
 use openmls::prelude::*;
 use openmls_basic_credential::SignatureKeyPair;
 use sunder_proto::Frame;
+use tls_codec::{Deserialize, Serialize};
 
 use super::{error::MlsError, provider::SunderMlsProvider};
 use crate::env::Environment;
@@ -201,30 +202,193 @@ impl<E: Environment> MlsGroup<E> {
             .unwrap_or(false)
     }
 
-    /// Process an incoming MLS Commit frame.
+    /// Process an incoming MLS message (Commit, Proposal, or Application).
     ///
-    /// This function processes a commit message, updates the group state,
-    /// and returns any actions that need to be taken as a result.
+    /// This function processes an MLS protocol message, updates the group
+    /// state, and returns any actions that need to be taken as a result.
     ///
     /// # Arguments
     ///
-    /// * `_frame` - The commit frame to process
+    /// * `frame` - The MLS message frame from the sequencer
     ///
     /// # Returns
     ///
-    /// Returns a vector of `MlsAction` that should be executed by the caller
+    /// Returns a vector of `MlsAction` that should be executed by the caller:
+    /// - `DeliverMessage` for decrypted application messages
+    /// - `Log` for state transitions
+    /// - `RemoveGroup` if we were removed from the group
     ///
     /// # Errors
     ///
-    /// Returns an error if the commit is invalid or cannot be processed.
-    pub fn process_commit(&mut self, _frame: Frame) -> Result<Vec<MlsAction>, MlsError> {
-        // TODO: Implement actual MLS commit processing
-        // This requires:
-        // 1. Environment trait for RNG
-        // 2. mls-rs integration with deterministic crypto
-        // 3. Proper frame deserialization using sunder-proto payloads
+    /// Returns an error if:
+    /// - The message cannot be deserialized
+    /// - The message is invalid (wrong epoch, bad signature, etc.)
+    /// - Crypto operations fail
+    pub fn process_message(&mut self, frame: Frame) -> Result<Vec<MlsAction>, MlsError> {
+        // Parse the MLS message from the frame payload
+        let mls_message =
+            MlsMessageIn::tls_deserialize_exact(frame.payload.as_ref()).map_err(|e| {
+                MlsError::Serialization(format!("Failed to deserialize MLS message: {}", e))
+            })?;
 
-        Ok(Vec::new())
+        // Extract the protocol message
+        let protocol_message: ProtocolMessage = mls_message
+            .try_into()
+            .map_err(|e| MlsError::Serialization(format!("Invalid MLS message type: {:?}", e)))?;
+
+        // Process the message through OpenMLS
+        let processed = self
+            .mls_group
+            .process_message(&self.provider, protocol_message)
+            .map_err(|e| MlsError::Crypto(format!("Failed to process message: {}", e)))?;
+
+        let mut actions = Vec::new();
+
+        match processed.into_content() {
+            ProcessedMessageContent::ApplicationMessage(app_msg) => {
+                // Decrypted application message - deliver to application
+                actions.push(MlsAction::DeliverMessage {
+                    sender: 0, // TODO: Map leaf index to member ID
+                    plaintext: app_msg.into_bytes(),
+                });
+            },
+            ProcessedMessageContent::ProposalMessage(proposal) => {
+                // Proposal received - log it
+                actions.push(MlsAction::Log {
+                    message: format!(
+                        "Received proposal in epoch {}: {:?}",
+                        self.epoch(),
+                        proposal.proposal()
+                    ),
+                });
+            },
+            ProcessedMessageContent::ExternalJoinProposalMessage(_) => {
+                actions.push(MlsAction::Log {
+                    message: format!("Received external join proposal in epoch {}", self.epoch()),
+                });
+            },
+            ProcessedMessageContent::StagedCommitMessage(staged_commit) => {
+                // Commit received - merge it to advance the epoch
+                self.mls_group
+                    .merge_staged_commit(&self.provider, *staged_commit)
+                    .map_err(|e| MlsError::Crypto(format!("Failed to merge commit: {}", e)))?;
+
+                actions.push(MlsAction::Log {
+                    message: format!("Advanced to epoch {}", self.epoch()),
+                });
+
+                // Check if we were removed from the group
+                if !self.mls_group.is_active() {
+                    actions.push(MlsAction::RemoveGroup {
+                        reason: "Removed from group by commit".to_string(),
+                    });
+                }
+            },
+        }
+
+        Ok(actions)
+    }
+
+    /// Create an application message to send to the group.
+    ///
+    /// This encrypts a plaintext message using the current epoch's encryption
+    /// key and returns a frame ready to send to the sequencer.
+    ///
+    /// # Arguments
+    ///
+    /// * `plaintext` - The message content to encrypt
+    ///
+    /// # Returns
+    ///
+    /// Returns `MlsAction::SendMessage` with the encrypted frame
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if encryption fails or the group is not active.
+    pub fn create_message(&mut self, plaintext: &[u8]) -> Result<Vec<MlsAction>, MlsError> {
+        // Create application message
+        let mls_message = self
+            .mls_group
+            .create_message(&self.provider, &self.signer, plaintext)
+            .map_err(|e| MlsError::Crypto(format!("Failed to create message: {}", e)))?;
+
+        // Serialize to wire format
+        let payload = mls_message
+            .tls_serialize_detached()
+            .map_err(|e| MlsError::Serialization(format!("Failed to serialize message: {}", e)))?;
+
+        // Create frame with the serialized MLS message
+        let frame = Frame {
+            header: sunder_proto::FrameHeader::new(sunder_proto::Opcode::AppMessage),
+            payload: payload.into(),
+        };
+
+        Ok(vec![MlsAction::SendMessage(frame)])
+    }
+
+    /// Add members to the group by their KeyPackages.
+    ///
+    /// This creates a commit that adds the specified members to the group.
+    /// The commit must be sent to the sequencer and will advance the epoch
+    /// when accepted.
+    ///
+    /// # Arguments
+    ///
+    /// * `key_packages` - KeyPackages of members to add
+    ///
+    /// # Returns
+    ///
+    /// Returns actions including:
+    /// - `SendCommit` with the commit frame
+    /// - `SendWelcome` for each new member
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if commit creation fails.
+    pub fn add_members(
+        &mut self,
+        key_packages: Vec<KeyPackage>,
+    ) -> Result<Vec<MlsAction>, MlsError> {
+        // Create commit that adds members
+        let (mls_message_out, welcome, _group_info) = self
+            .mls_group
+            .add_members(&self.provider, &self.signer, &key_packages)
+            .map_err(|e| MlsError::Crypto(format!("Failed to add members: {}", e)))?;
+
+        let mut actions = Vec::new();
+
+        // Serialize commit message
+        let commit_payload = mls_message_out
+            .tls_serialize_detached()
+            .map_err(|e| MlsError::Serialization(format!("Failed to serialize commit: {}", e)))?;
+
+        let commit_frame = Frame {
+            header: sunder_proto::FrameHeader::new(sunder_proto::Opcode::Commit),
+            payload: commit_payload.into(),
+        };
+
+        actions.push(MlsAction::SendCommit(commit_frame));
+
+        // Serialize welcome message
+        let welcome_payload = welcome
+            .tls_serialize_detached()
+            .map_err(|e| MlsError::Serialization(format!("Failed to serialize welcome: {}", e)))?;
+
+        let welcome_frame = Frame {
+            header: sunder_proto::FrameHeader::new(sunder_proto::Opcode::Welcome),
+            payload: welcome_payload.into(),
+        };
+
+        // Send welcome to all new members (TODO: track individual recipients)
+        for _kp in &key_packages {
+            actions.push(MlsAction::SendWelcome { recipient: 0, frame: welcome_frame.clone() });
+        }
+
+        actions.push(MlsAction::Log {
+            message: format!("Adding {} members to group", key_packages.len()),
+        });
+
+        Ok(actions)
     }
 }
 
