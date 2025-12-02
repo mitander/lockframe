@@ -187,8 +187,8 @@ impl<E: Environment> MlsGroup<E> {
 
     /// Process an incoming MLS message (Commit, Proposal, or Application).
     ///
-    /// This function processes an MLS protocol message, updates the group
-    /// state, and returns any actions that need to be taken as a result.
+    /// Processes an MLS protocol message, updates the group state, and returns
+    /// any actions that need to be taken as a result.
     ///
     /// # Errors
     ///
@@ -263,8 +263,8 @@ impl<E: Environment> MlsGroup<E> {
 
     /// Create an application message to send to the group.
     ///
-    /// This encrypts a plaintext message using the current epoch's encryption
-    /// key and returns a frame ready to send to the sequencer.
+    /// Encrypts a plaintext message using the current epoch's encryption key
+    /// and returns a frame ready to send to the sequencer.
     ///
     /// # Errors
     ///
@@ -292,9 +292,9 @@ impl<E: Environment> MlsGroup<E> {
 
     /// Add members to the group by their KeyPackages.
     ///
-    /// This creates a commit that adds the specified members to the group.
-    /// The commit must be sent to the sequencer and will advance the epoch
-    /// when accepted.
+    /// Creates a commit that adds the specified members to the group. The
+    /// commit must be sent to the sequencer and will advance the epoch when
+    /// accepted.
     ///
     /// # Errors
     ///

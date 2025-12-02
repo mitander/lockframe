@@ -19,7 +19,18 @@ use crate::mls::MlsGroupState;
 /// - Send + Sync: Thread-safe for concurrent access
 /// - Synchronous: No async methods (Sans-IO compliance)
 ///
-/// Implementations should use internal Arc/Mutex for shared state.
+/// # Clone Semantics
+///
+/// Implementations typically share internal state via Arc, meaning clones
+/// access the same underlying storage. This enables multiple state machines
+/// to share one storage instance safely.
+///
+/// # Panics
+///
+/// Implementations may panic if internal synchronization primitives are
+/// poisoned (a thread panicked while holding a lock). This is acceptable
+/// for test/simulation code, but production implementations should handle
+/// poisoned mutexes gracefully or use panic-free synchronization.
 pub trait Storage: Clone + Send + Sync + 'static {
     /// Store a frame in the room's log at the given index
     ///
@@ -38,6 +49,10 @@ pub trait Storage: Clone + Send + Sync + 'static {
     /// Get the latest log index for a room
     ///
     /// Returns `None` if the room doesn't exist or has no frames.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Io` if underlying storage access fails.
     fn latest_log_index(&self, room_id: u128) -> Result<Option<u64>, StorageError>;
 
     /// Load frames from a room's log
@@ -63,5 +78,11 @@ pub trait Storage: Clone + Send + Sync + 'static {
     /// Load MLS group state for a room
     ///
     /// Returns `None` if no state exists for this room.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Io` if underlying storage access fails.
+    /// Returns `StorageError::Serialization` if stored data cannot be
+    /// deserialized.
     fn load_mls_state(&self, room_id: u128) -> Result<Option<MlsGroupState>, StorageError>;
 }

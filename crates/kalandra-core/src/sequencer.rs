@@ -187,10 +187,13 @@ impl Sequencer {
         let sequenced_frame = rebuild_frame_with_index(frame, log_index)?;
 
         // Return actions (driver executes them)
+        // Note: Frame clones are cheap - payload is Arc-based (Bytes), only header is
+        // copied
+        let frame_for_actions = sequenced_frame;
         Ok(vec![
-            SequencerAction::AcceptFrame { room_id, log_index, frame: sequenced_frame.clone() },
-            SequencerAction::StoreFrame { room_id, log_index, frame: sequenced_frame.clone() },
-            SequencerAction::BroadcastToRoom { room_id, frame: sequenced_frame },
+            SequencerAction::AcceptFrame { room_id, log_index, frame: frame_for_actions.clone() },
+            SequencerAction::StoreFrame { room_id, log_index, frame: frame_for_actions.clone() },
+            SequencerAction::BroadcastToRoom { room_id, frame: frame_for_actions },
         ])
     }
 
@@ -211,6 +214,11 @@ impl Default for Sequencer {
 ///
 /// This creates a new FrameHeader with the updated log_index while
 /// reusing the payload bytes (zero-copy via Bytes::clone which is Arc-based).
+///
+/// # Errors
+///
+/// This function currently cannot fail but returns Result for API consistency.
+/// Future versions may add validation that can fail.
 fn rebuild_frame_with_index(original: Frame, log_index: u64) -> Result<Frame, SequencerError> {
     let mut new_header = original.header;
     new_header.set_log_index(log_index);

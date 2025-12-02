@@ -42,6 +42,10 @@ pub struct MlsProvider<E: Environment> {
 
 impl<E: Environment> MlsProvider<E> {
     /// Create a new provider with the given environment.
+    ///
+    /// Initializes a provider with in-memory storage and RNG seeded by the
+    /// environment. In simulation, the environment provides deterministic RNG.
+    /// In production, it provides crypto-secure randomness.
     pub fn new(env: E) -> Self {
         Self {
             crypto: RustCrypto::default(),

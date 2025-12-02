@@ -1,3 +1,11 @@
+//! Storage error types.
+//!
+//! Defines errors that can occur during storage operations:
+//! - `NotFound`: Requested frame or room doesn't exist
+//! - `Conflict`: Log index gap detected (sequencing violation)
+//! - `Serialization`: Failed to encode/decode data
+//! - `Io`: Underlying storage system errors
+
 use thiserror::Error;
 
 /// Errors that can occur during storage operations

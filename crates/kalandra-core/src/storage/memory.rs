@@ -54,6 +54,11 @@ impl MemoryStorage {
     /// Get the number of rooms with stored frames
     ///
     /// Useful for debugging and testing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned (a thread panicked while
+    /// holding the lock). This is acceptable for test/simulation code.
     pub fn room_count(&self) -> usize {
         self.inner.lock().expect("MemoryStorage mutex poisoned").frames.len()
     }
@@ -61,6 +66,11 @@ impl MemoryStorage {
     /// Get the total number of frames across all rooms
     ///
     /// Useful for debugging and testing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned (a thread panicked while
+    /// holding the lock). This is acceptable for test/simulation code.
     pub fn total_frame_count(&self) -> usize {
         self.inner
             .lock()
@@ -79,6 +89,10 @@ impl Default for MemoryStorage {
 }
 
 impl Storage for MemoryStorage {
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
     fn store_frame(
         &self,
         room_id: u128,
@@ -95,12 +109,19 @@ impl Storage for MemoryStorage {
             return Err(StorageError::Conflict { expected: expected_index, got: log_index });
         }
 
-        // Clone the frame (in-memory storage owns the data)
+        // Clone the frame (in-memory storage owns the data).
+        // Note: This clones the entire frame including payload bytes. Production
+        // storage (redb) will avoid this by storing serialized bytes directly.
+        // The payload clone is cheap (Arc increment via Bytes) but header is copied.
         frames.push(frame.clone());
 
         Ok(())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
     fn latest_log_index(&self, room_id: u128) -> Result<Option<u64>, StorageError> {
         let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
 
@@ -109,6 +130,10 @@ impl Storage for MemoryStorage {
         }))
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
     fn load_frames(
         &self,
         room_id: u128,
@@ -132,6 +157,10 @@ impl Storage for MemoryStorage {
         Ok(frames[start..end].to_vec())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
     fn store_mls_state(&self, room_id: u128, state: &MlsGroupState) -> Result<(), StorageError> {
         let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
 
@@ -140,6 +169,10 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
     fn load_mls_state(&self, room_id: u128) -> Result<Option<MlsGroupState>, StorageError> {
         let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
 

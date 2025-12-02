@@ -28,7 +28,7 @@ multiple_crate_versions = "allow"
 
 missing_const_for_fn = "allow"
 missing_enforced_import_renames = "allow"
-doc_markdown = "allow"
+doc_markdown = "warn"  # Enforce markdown formatting in docs
 disallowed_macros = "allow"
 
 unwrap_used = "deny"

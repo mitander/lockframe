@@ -35,6 +35,12 @@ pub struct MlsValidator;
 
 impl MlsValidator {
     /// Validate a frame against current MLS group state
+    ///
+    /// # Errors
+    ///
+    /// Returns `MlsError` if frame validation encounters an internal error.
+    /// Note: Validation failures return `Ok(ValidationResult::Reject)`, not
+    /// errors.
     pub fn validate_frame(
         frame: &Frame,
         current_epoch: u64,
@@ -69,6 +75,12 @@ impl MlsValidator {
     ///
     /// This is used for the initial setup of a room before MLS is initialized.
     /// Only basic sanity checks are performed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MlsError` if frame validation encounters an internal error.
+    /// Note: Validation failures return `Ok(ValidationResult::Reject)`, not
+    /// errors.
     pub fn validate_frame_no_state(frame: &Frame) -> Result<ValidationResult, MlsError> {
         // For now, accept all frames when no MLS state exists
         // In production, we might want to:
