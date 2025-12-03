@@ -1,0 +1,40 @@
+[package]
+name = "kalandra-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Crates to fuzz
+kalandra-proto = { path = "../crates/kalandra-proto" }
+kalandra-core = { path = "../crates/kalandra-core" }
+
+# Dependencies needed for fuzzing
+bytes = "1.11"
+
+# Fuzz targets
+[[bin]]
+name = "frame_decode"
+path = "fuzz_targets/frame_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sequencer_invalid"
+path = "fuzz_targets/sequencer_invalid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "payload_decode"
+path = "fuzz_targets/payload_decode.rs"
+test = false
+doc = false
+bench = false
