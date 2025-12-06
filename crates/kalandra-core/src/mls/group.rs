@@ -5,8 +5,12 @@ use openmls::prelude::*;
 use openmls_basic_credential::SignatureKeyPair;
 use tls_codec::{Deserialize, Serialize};
 
-use super::{error::MlsError, provider::MlsProvider};
-use crate::env::Environment;
+use super::{
+    error::MlsError,
+    provider::MlsProvider,
+    validator::{MlsValidator, ValidationResult},
+};
+use crate::{env::Environment, storage::Storage};
 
 /// Room identifier (128-bit UUID).
 pub type RoomId = u128;
@@ -187,6 +191,34 @@ impl<E: Environment> MlsGroup<E> {
             .as_ref()
             .map(|pending| now - pending.sent_at >= timeout)
             .unwrap_or(false)
+    }
+
+    /// Validate a frame against this group's MLS state
+    ///
+    /// Checks:
+    /// - Frame epoch matches group epoch
+    /// - Sender is a member of the group
+    ///
+    /// # Errors
+    ///
+    /// Returns `MlsError` if validation fails.
+    pub fn validate_frame(&self, frame: &Frame, storage: &impl Storage) -> Result<(), MlsError> {
+        // Try to load MLS state from storage first
+        // If not found (e.g., newly created group), use validate_frame_no_state
+        let validation_result = if let Some(mls_state) = storage
+            .load_mls_state(self.room_id)
+            .map_err(|e| MlsError::Crypto(format!("Failed to load MLS state: {}", e)))?
+        {
+            MlsValidator::validate_frame(frame, self.epoch(), &mls_state)?
+        } else {
+            // No MLS state in storage yet - validate without state (epoch 0 check)
+            MlsValidator::validate_frame_no_state(frame)?
+        };
+
+        match validation_result {
+            ValidationResult::Accept => Ok(()),
+            ValidationResult::Reject { reason } => Err(MlsError::ValidationFailed(reason)),
+        }
     }
 
     /// Process an incoming MLS message (Commit, Proposal, or Application).

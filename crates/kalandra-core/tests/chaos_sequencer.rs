@@ -8,7 +8,6 @@
 
 use bytes::Bytes;
 use kalandra_core::{
-    mls::MlsValidator,
     sequencer::Sequencer,
     storage::{ChaoticStorage, MemoryStorage, Storage},
 };
@@ -67,13 +66,12 @@ fn prop_sequencer_survives_low_chaos() {
     )| {
         let inner_storage = MemoryStorage::new();
         let storage = ChaoticStorage::with_seed(inner_storage, failure_rate, seed);
-        let validator = MlsValidator;
         let mut sequencer = Sequencer::new();
 
         // Process all frames - some may fail due to storage chaos
         for frame in frames {
             let room_id = frame.header.room_id();
-            let _ = sequencer.process_frame(frame, &storage, &validator);
+            let _ = sequencer.process_frame(frame, &storage);
 
             // INVARIANT: Frames that DID succeed must have sequential indices
             verify_sequential_indices(storage.inner(), room_id);
@@ -90,13 +88,12 @@ fn prop_sequencer_survives_high_chaos() {
     )| {
         let inner_storage = MemoryStorage::new();
         let storage = ChaoticStorage::with_seed(inner_storage, failure_rate, seed);
-        let validator = MlsValidator;
         let mut sequencer = Sequencer::new();
 
         // Process all frames - most will fail
         for frame in frames {
             let room_id = frame.header.room_id();
-            let _ = sequencer.process_frame(frame, &storage, &validator);
+            let _ = sequencer.process_frame(frame, &storage);
 
             // INVARIANT: Even with high failure rate, no gaps in what DID succeed
             verify_sequential_indices(storage.inner(), room_id);
@@ -113,22 +110,20 @@ fn prop_sequencer_deterministic_under_chaos() {
     )| {
         // Run 1: Process frames with chaotic storage
         let storage1 = ChaoticStorage::with_seed(MemoryStorage::new(), failure_rate, seed);
-        let validator1 = MlsValidator;
         let mut sequencer1 = Sequencer::new();
 
         let results1: Vec<_> = frames
             .iter()
-            .map(|f| sequencer1.process_frame(f.clone(), &storage1, &validator1).is_ok())
+            .map(|f| sequencer1.process_frame(f.clone(), &storage1).is_ok())
             .collect();
 
         // Run 2: Same seed should produce same failure pattern
         let storage2 = ChaoticStorage::with_seed(MemoryStorage::new(), failure_rate, seed);
-        let validator2 = MlsValidator;
         let mut sequencer2 = Sequencer::new();
 
         let results2: Vec<_> = frames
             .iter()
-            .map(|f| sequencer2.process_frame(f.clone(), &storage2, &validator2).is_ok())
+            .map(|f| sequencer2.process_frame(f.clone(), &storage2).is_ok())
             .collect();
 
         // INVARIANT: Deterministic chaos - same seed, same results
@@ -145,7 +140,6 @@ fn prop_sequencer_never_creates_gaps() {
         frame_count in 10usize..100
     )| {
         let storage = ChaoticStorage::with_seed(MemoryStorage::new(), failure_rate, seed);
-        let validator = MlsValidator;
         let mut sequencer = Sequencer::new();
 
         // Track storage operations for performance oracle
@@ -162,7 +156,7 @@ fn prop_sequencer_never_creates_gaps() {
             let frame = Frame::new(header, Bytes::from(vec![i as u8]));
 
             attempt_count += 1;
-            let _ = sequencer.process_frame(frame, &storage, &validator);
+            let _ = sequencer.process_frame(frame, &storage);
         }
 
         // ORACLE: Check that all stored frames have sequential indices
@@ -212,7 +206,6 @@ fn prop_sequencer_storage_errors_propagate() {
     )| {
         // 100% failure rate - all operations fail
         let storage = ChaoticStorage::with_seed(MemoryStorage::new(), 1.0, seed);
-        let validator = MlsValidator;
         let mut sequencer = Sequencer::new();
 
         let mut header = FrameHeader::new(Opcode::AppMessage);
@@ -224,7 +217,7 @@ fn prop_sequencer_storage_errors_propagate() {
         let frame = Frame::new(header, Bytes::new());
 
         // Process frame - should fail due to storage error
-        let result = sequencer.process_frame(frame, &storage, &validator);
+        let result = sequencer.process_frame(frame, &storage);
 
         // INVARIANT: Storage errors must propagate, not be swallowed
         prop_assert!(result.is_err(), "Storage errors must propagate to caller");

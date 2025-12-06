@@ -12,8 +12,8 @@
 //!
 //! # Flow
 //!
-//! 1. **Load State**: Get latest log_index and MLS state from storage
-//! 2. **Validate**: Check epoch and membership via MlsValidator
+//! 1. **Load State**: Get latest log_index from storage
+//! 2. **Validate Frame Structure**: Check magic, version, payload size
 //! 3. **Sequence**: Assign next log_index to frame
 //! 4. **Return Actions**: StoreFrame, BroadcastFrame, etc.
 
@@ -22,10 +22,8 @@ use std::collections::HashMap;
 use kalandra_proto::{Frame, FrameHeader};
 use thiserror::Error;
 
-#[cfg(test)]
-use crate::mls::MlsGroupState;
 use crate::{
-    mls::{MAX_EPOCH, MlsValidator, ValidationResult},
+    mls::MAX_EPOCH,
     storage::{Storage, StorageError},
 };
 
@@ -98,14 +96,11 @@ pub enum SequencerAction {
 struct RoomSequencer {
     /// Next log index to assign
     next_log_index: u64,
-
-    /// Current MLS epoch (cached from storage)
-    current_epoch: u64,
 }
 
 /// Server-side frame sequencer
 ///
-/// The Sequencer maintains per-room state (next_log_index, current_epoch)
+/// The Sequencer maintains per-room state (next_log_index)
 /// and assigns monotonic log indices to incoming frames.
 #[derive(Debug)]
 pub struct Sequencer {
@@ -173,6 +168,7 @@ impl Sequencer {
     /// # Invariants
     ///
     /// - **Pre**: Frame header must be valid (magic, version, etc.)
+    /// - **Pre**: Frame must be validated by caller (RoomManager)
     /// - **Post**: If accepted, frame.log_index will be set to next available
     ///   index
     /// - **Post**: room.next_log_index will be incremented
@@ -184,7 +180,6 @@ impl Sequencer {
         &mut self,
         frame: Frame,
         storage: &impl Storage,
-        _validator: &MlsValidator,
     ) -> Result<Vec<SequencerAction>, SequencerError> {
         validate_frame_structure(&frame)?;
 
@@ -200,71 +195,25 @@ impl Sequencer {
                 e
             })?;
 
-            let mls_state = storage.load_mls_state(room_id).map_err(|e| {
-                tracing::error!(
-                    room_id = %room_id,
-                    error = %e,
-                    "Failed to load MLS state during room initialization"
-                );
-                e
-            })?;
-
             let next_log_index = latest_index.map(|i| i + 1).unwrap_or(0);
 
             debug_assert!(
                 latest_index.map(|i| next_log_index == i + 1).unwrap_or(next_log_index == 0)
             );
 
-            let current_epoch = mls_state.as_ref().map(|s| s.epoch).unwrap_or(0);
-
             tracing::debug!(
                 room_id = %room_id,
                 next_log_index,
-                current_epoch,
-                has_mls_state = mls_state.is_some(),
                 "Initialized room state from storage"
             );
 
-            self.rooms.insert(room_id, RoomSequencer { next_log_index, current_epoch });
+            self.rooms.insert(room_id, RoomSequencer { next_log_index });
         }
 
         let room = self.rooms.get_mut(&room_id).expect("room must exist after initialization");
 
-        // COVERAGE SENTINEL: Fuzzers should hit both branches
-        #[cfg_attr(not(fuzzing), allow(unexpected_cfgs))]
-        #[cfg(fuzzing)]
-        {
-            if room.next_log_index == 0 {
-                // First frame path - fuzzer MUST hit this
-                let _ = room.next_log_index;
-            }
-        }
-
-        let validation_result = if room.next_log_index == 0 {
-            MlsValidator::validate_frame_no_state(&frame)
-                .map_err(|e| SequencerError::Validation(e.to_string()))?
-        } else {
-            let mls_state = storage.load_mls_state(room_id)?.ok_or_else(|| {
-                SequencerError::Validation(format!(
-                    "MLS state not found for room {} (expected state for log index {})",
-                    room_id, room.next_log_index
-                ))
-            })?;
-
-            MlsValidator::validate_frame(&frame, room.current_epoch, &mls_state)
-                .map_err(|e| SequencerError::Validation(e.to_string()))?
-        };
-
-        match validation_result {
-            ValidationResult::Reject { reason } => {
-                return Ok(vec![SequencerAction::RejectFrame {
-                    room_id,
-                    reason,
-                    original_frame: frame,
-                }]);
-            },
-            ValidationResult::Accept => {},
-        }
+        // MLS validation is now handled by RoomManager before calling this method
+        // Sequencer only assigns log indices
 
         let log_index = room.next_log_index;
 
@@ -339,20 +288,14 @@ mod tests {
         Frame::new(header, Bytes::from(format!("msg-{}", sender_id)))
     }
 
-    fn create_test_state(room_id: u128, epoch: u64, members: Vec<u64>) -> MlsGroupState {
-        MlsGroupState::new(room_id, epoch, [0u8; 32], members, vec![])
-    }
-
     #[test]
     fn test_single_frame_sequencing() {
         let mut sequencer = Sequencer::new();
         let storage = MemoryStorage::new();
-        let validator = MlsValidator;
 
         let frame = create_test_frame(100, 200, 0);
 
-        let actions =
-            sequencer.process_frame(frame, &storage, &validator).expect("sequencing failed");
+        let actions = sequencer.process_frame(frame, &storage).expect("sequencing failed");
 
         assert_eq!(actions.len(), 3);
 
@@ -389,18 +332,13 @@ mod tests {
     fn test_sequential_frames() {
         let mut sequencer = Sequencer::new();
         let storage = MemoryStorage::new();
-        let validator = MlsValidator;
 
         let room_id = 100;
-        // Use epoch 0 for new room (first frames)
-        let state = create_test_state(room_id, 0, vec![200, 300]);
-        storage.store_mls_state(room_id, &state).expect("store state failed");
 
         // Process 3 frames
         for i in 0..3 {
             let frame = create_test_frame(room_id, 200, 0); // epoch 0
-            let actions =
-                sequencer.process_frame(frame, &storage, &validator).expect("sequencing failed");
+            let actions = sequencer.process_frame(frame, &storage).expect("sequencing failed");
 
             // Verify log_index is sequential
             match &actions[0] {
@@ -428,103 +366,20 @@ mod tests {
     }
 
     #[test]
-    fn test_epoch_mismatch_rejection() {
-        let mut sequencer = Sequencer::new();
-        let storage = MemoryStorage::new();
-        let validator = MlsValidator;
-
-        let room_id = 100;
-        // Start with epoch 0
-        let state = create_test_state(room_id, 0, vec![200]);
-        storage.store_mls_state(room_id, &state).expect("store state failed");
-
-        // Store one frame to initialize room (epoch 0)
-        let init_frame = create_test_frame(room_id, 200, 0);
-        let actions =
-            sequencer.process_frame(init_frame, &storage, &validator).expect("init failed");
-
-        // Execute StoreFrame action
-        for action in actions {
-            if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
-                storage.store_frame(room_id, log_index, &frame).expect("store failed");
-            }
-        }
-
-        // Try to send frame with wrong epoch
-        let bad_frame = create_test_frame(room_id, 200, 5); // epoch 5, expected 0
-
-        let actions =
-            sequencer.process_frame(bad_frame, &storage, &validator).expect("sequencing failed");
-
-        assert_eq!(actions.len(), 1);
-        match &actions[0] {
-            SequencerAction::RejectFrame { reason, .. } => {
-                assert!(reason.contains("epoch mismatch"), "Got: {}", reason);
-            },
-            _ => panic!("Expected RejectFrame"),
-        }
-    }
-
-    #[test]
-    fn test_non_member_rejection() {
-        let mut sequencer = Sequencer::new();
-        let storage = MemoryStorage::new();
-        let validator = MlsValidator;
-
-        let room_id = 100;
-        // Start with epoch 0
-        let state = create_test_state(room_id, 0, vec![200, 300]);
-        storage.store_mls_state(room_id, &state).expect("store state failed");
-
-        // Store init frame (epoch 0)
-        let init_frame = create_test_frame(room_id, 200, 0);
-        let actions =
-            sequencer.process_frame(init_frame, &storage, &validator).expect("init failed");
-
-        // Execute StoreFrame action
-        for action in actions {
-            if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
-                storage.store_frame(room_id, log_index, &frame).expect("store failed");
-            }
-        }
-
-        // Try to send frame from non-member
-        let bad_frame = create_test_frame(room_id, 999, 0); // sender 999 not in group, epoch 0
-
-        let actions =
-            sequencer.process_frame(bad_frame, &storage, &validator).expect("sequencing failed");
-
-        assert_eq!(actions.len(), 1);
-        match &actions[0] {
-            SequencerAction::RejectFrame { reason, .. } => {
-                assert!(reason.contains("not in group"), "Got: {}", reason);
-            },
-            _ => panic!("Expected RejectFrame"),
-        }
-    }
-
-    #[test]
     fn test_concurrent_rooms() {
         let mut sequencer = Sequencer::new();
         let storage = MemoryStorage::new();
-        let validator = MlsValidator;
-
-        // Set up two rooms
-        for room_id in [100, 200] {
-            let state = create_test_state(room_id, 0, vec![300]);
-            storage.store_mls_state(room_id, &state).expect("store state failed");
-        }
 
         // Send frames to room 100
         for _ in 0..3 {
             let frame = create_test_frame(100, 300, 0);
-            sequencer.process_frame(frame, &storage, &validator).expect("sequencing failed");
+            sequencer.process_frame(frame, &storage).expect("sequencing failed");
         }
 
         // Send frames to room 200
         for _ in 0..5 {
             let frame = create_test_frame(200, 300, 0);
-            sequencer.process_frame(frame, &storage, &validator).expect("sequencing failed");
+            sequencer.process_frame(frame, &storage).expect("sequencing failed");
         }
 
         // Verify independent sequencing

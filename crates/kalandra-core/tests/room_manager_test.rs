@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use kalandra_core::{
     room_manager::{RoomError, RoomManager},
-    storage::MemoryStorage,
+    storage::{MemoryStorage, Storage},
 };
 use kalandra_proto::{Frame, FrameHeader, Opcode};
 
@@ -96,6 +96,7 @@ fn create_multiple_rooms() {
 
 #[test]
 fn process_frame_rejects_unknown_room() {
+    let env = TestEnv;
     let mut manager = RoomManager::<TestEnv>::new();
     let storage = MemoryStorage::new();
 
@@ -106,7 +107,7 @@ fn process_frame_rejects_unknown_room() {
     header.set_epoch(0);
     let frame = Frame::new(header, Bytes::new());
 
-    let result = manager.process_frame(frame, &storage);
+    let result = manager.process_frame(frame, &env, &storage);
     assert!(matches!(result, Err(RoomError::RoomNotFound(_))));
 }
 
@@ -129,7 +130,10 @@ fn process_frame_succeeds_for_valid_frame() {
     header.set_epoch(0);
     let frame = Frame::new(header, Bytes::new());
 
-    let result = manager.process_frame(frame, &storage);
+    let result = manager.process_frame(frame, &env, &storage);
+    if let Err(ref e) = result {
+        panic!("process_frame failed: {:?}", e);
+    }
     assert!(result.is_ok());
 
     let actions = result.unwrap();
@@ -159,7 +163,7 @@ fn process_frame_returns_correct_action_types() {
     header.set_epoch(0);
     let frame = Frame::new(header, Bytes::from("test message"));
 
-    let result = manager.process_frame(frame, &storage);
+    let result = manager.process_frame(frame, &env, &storage);
     assert!(result.is_ok());
 
     let actions = result.unwrap();
@@ -173,4 +177,32 @@ fn process_frame_returns_correct_action_types() {
 
     // Last should be Broadcast (from BroadcastToRoom)
     assert!(matches!(actions[2], RoomAction::Broadcast { .. }));
+}
+
+#[test]
+fn process_frame_rejects_wrong_epoch() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+    let storage = MemoryStorage::new();
+
+    let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    let creator = 42;
+
+    // Create room (epoch 0)
+    manager.create_room(room_id, creator, &env).unwrap();
+
+    // Store initial MLS state at epoch 0
+    use kalandra_core::mls::MlsGroupState;
+    let mls_state = MlsGroupState::new(room_id, 0, [0u8; 32], vec![creator], vec![]);
+    storage.store_mls_state(room_id, &mls_state).unwrap();
+
+    // Create frame with wrong epoch (epoch 5, but room is at epoch 0)
+    let mut header = FrameHeader::new(Opcode::AppMessage);
+    header.set_room_id(room_id);
+    header.set_sender_id(creator);
+    header.set_epoch(5); // Wrong epoch!
+    let frame = Frame::new(header, Bytes::new());
+
+    let result = manager.process_frame(frame, &env, &storage);
+    assert!(matches!(result, Err(RoomError::MlsValidation(_))));
 }

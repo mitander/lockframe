@@ -83,6 +83,14 @@ pub enum MlsError {
         /// Time elapsed before timeout
         elapsed: Duration,
     },
+
+    /// MLS group not found in storage
+    #[error("group not found")]
+    GroupNotFound,
+
+    /// Frame validation failed
+    #[error("validation failed: {0}")]
+    ValidationFailed(String),
 }
 
 impl MlsError {

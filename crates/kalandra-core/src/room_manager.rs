@@ -33,7 +33,7 @@ use kalandra_proto::Frame;
 
 use crate::{
     env::Environment,
-    mls::{MlsValidator, error::MlsError, group::MlsGroup, state::MlsGroupState},
+    mls::{error::MlsError, group::MlsGroup, state::MlsGroupState},
     sequencer::{Sequencer, SequencerAction, SequencerError},
     storage::{Storage, StorageError},
 };
@@ -169,9 +169,10 @@ where
     ///
     /// This method orchestrates the full frame processing pipeline:
     /// 1. Verify room exists (no lazy creation)
-    /// 2. Delegate to Sequencer which handles MLS validation and sequencing
-    /// 3. Convert SequencerAction to RoomAction
-    /// 4. Return actions for driver to execute
+    /// 2. Validate frame against MLS state
+    /// 3. Sequence the frame (assign log index)
+    /// 4. Convert SequencerAction to RoomAction
+    /// 5. Return actions for driver to execute
     ///
     /// # Errors
     ///
@@ -181,19 +182,20 @@ where
     pub fn process_frame(
         &mut self,
         frame: Frame,
+        env: &E,
         storage: &impl Storage,
     ) -> Result<Vec<RoomAction>, RoomError> {
         // 1. Room must exist (no lazy creation)
         let room_id = frame.header.room_id();
-        if !self.has_room(room_id) {
-            return Err(RoomError::RoomNotFound(room_id));
-        }
+        let group = self.groups.get(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
 
-        // 2. Delegate to Sequencer (which handles MLS validation + sequencing)
-        let validator = MlsValidator;
-        let sequencer_actions = self.sequencer.process_frame(frame, storage, &validator)?;
+        // 2. Validate frame against MLS state
+        group.validate_frame(&frame, storage)?;
 
-        // 3. Convert SequencerAction to RoomAction
+        // 3. Sequence the frame (assign log index)
+        let sequencer_actions = self.sequencer.process_frame(frame, storage)?;
+
+        // 4. Convert SequencerAction to RoomAction
         let room_actions = sequencer_actions
             .into_iter()
             .map(|action| match action {
