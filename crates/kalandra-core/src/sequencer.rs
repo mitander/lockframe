@@ -107,6 +107,7 @@ struct RoomSequencer {
 ///
 /// The Sequencer maintains per-room state (next_log_index, current_epoch)
 /// and assigns monotonic log indices to incoming frames.
+#[derive(Debug)]
 pub struct Sequencer {
     /// Per-room state cache
     rooms: HashMap<u128, RoomSequencer>,

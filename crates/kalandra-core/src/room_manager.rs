@@ -27,13 +27,13 @@
 //! - **Sans-IO**: All methods return actions, no direct I/O
 //! - **Generic over Instant**: Works with any time abstraction
 
-use std::{collections::HashMap, marker::PhantomData};
+use std::collections::HashMap;
 
 use kalandra_proto::Frame;
 
 use crate::{
     env::Environment,
-    mls::{error::MlsError, state::MlsGroupState},
+    mls::{error::MlsError, group::MlsGroup, state::MlsGroupState},
     sequencer::{Sequencer, SequencerError},
     storage::StorageError,
 };
@@ -53,15 +53,13 @@ pub struct RoomManager<E>
 where
     E: Environment,
 {
+    /// Per-room MLS group state
+    groups: HashMap<u128, MlsGroup<E>>,
     /// Frame sequencer (assigns log indices)
     #[allow(dead_code)] // Will be used in Task 2.3
     sequencer: Sequencer,
     /// Room metadata (for future authorization)
     room_metadata: HashMap<u128, RoomMetadata<E::Instant>>,
-    /// Type marker for environment
-    _phantom: PhantomData<E>,
-    // Note: MlsGroup instances will be stored in HashMap in Task 2.2
-    // groups: HashMap<u128, MlsGroup<E>>, // Added in Task 2.2
 }
 
 /// Actions returned by RoomManager for driver to execute
@@ -134,7 +132,7 @@ where
 {
     /// Create a new RoomManager
     pub fn new() -> Self {
-        Self { sequencer: Sequencer::new(), room_metadata: HashMap::new(), _phantom: PhantomData }
+        Self { groups: HashMap::new(), sequencer: Sequencer::new(), room_metadata: HashMap::new() }
     }
 
     /// Check if a room exists
@@ -142,7 +140,74 @@ where
         self.room_metadata.contains_key(&room_id)
     }
 
-    // create_room() and process_frame() will be added in Tasks 2.2 and 2.3
+    /// Create a new room with authorization metadata
+    ///
+    /// Creates a room with the specified ID and records the creator for
+    /// future authorization checks. Prevents duplicate room creation.
+    ///
+    /// # Arguments
+    ///
+    /// * `room_id` - Unique identifier for the room (128-bit)
+    /// * `creator` - User ID of the room creator
+    /// * `env` - Environment for time and crypto operations
+    ///
+    /// # Invariants
+    ///
+    /// - **Pre:** `!self.has_room(room_id)`
+    /// - **Post:** `self.has_room(room_id) == true`
+    /// - **Post:** `self.room_metadata[room_id].creator == creator`
+    ///
+    /// # Errors
+    ///
+    /// Returns `RoomError::RoomAlreadyExists` if the room ID already exists.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use kalandra_core::room_manager::{RoomManager, RoomError};
+    /// # use kalandra_core::env::Environment;
+    /// # #[derive(Clone)]
+    /// # struct TestEnv;
+    /// # impl Environment for TestEnv {
+    /// #     type Instant = std::time::Instant;
+    /// #     fn now(&self) -> Self::Instant { std::time::Instant::now() }
+    /// #     fn sleep(&self, d: std::time::Duration) -> impl std::future::Future<Output = ()> + Send { async move { tokio::time::sleep(d).await } }
+    /// #     fn random_bytes(&self, buffer: &mut [u8]) { use rand::RngCore; rand::thread_rng().fill_bytes(buffer); }
+    /// # }
+    /// let env = TestEnv;
+    /// let mut manager = RoomManager::new();
+    /// let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    /// let creator = 42;
+    ///
+    /// manager.create_room(room_id, creator, &env)?;
+    /// assert!(manager.has_room(room_id));
+    /// # Ok::<(), RoomError>(())
+    /// ```
+    pub fn create_room(&mut self, room_id: u128, creator: u64, env: &E) -> Result<(), RoomError>
+    where
+        E::Instant: Into<std::time::Instant>,
+    {
+        // Prevent duplicate rooms
+        if self.has_room(room_id) {
+            return Err(RoomError::RoomAlreadyExists(room_id));
+        }
+
+        // Create MLS group with Environment
+        // For server-side room creation, we use room_id as member_id (server is initial
+        // member)
+        let now = env.now().into();
+        let (group, _actions) =
+            MlsGroup::new(env.clone(), room_id, creator, now).map_err(RoomError::MlsValidation)?;
+        self.groups.insert(room_id, group);
+
+        // Store metadata (placeholder for future auth)
+        let metadata = RoomMetadata { creator, created_at: env.now() };
+        self.room_metadata.insert(room_id, metadata);
+
+        Ok(())
+    }
+
+    // process_frame() will be added in Task 2.3
 }
 
 impl<E> Default for RoomManager<E>
@@ -157,9 +222,11 @@ where
 impl<E> std::fmt::Debug for RoomManager<E>
 where
     E: Environment,
-    E::Instant: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RoomManager").field("room_count", &self.room_metadata.len()).finish()
+        f.debug_struct("RoomManager")
+            .field("room_count", &self.room_metadata.len())
+            .field("sequencer", &self.sequencer)
+            .finish()
     }
 }

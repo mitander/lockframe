@@ -1,6 +1,6 @@
 //! Room Manager tests
 
-use kalandra_core::room_manager::RoomManager;
+use kalandra_core::room_manager::{RoomError, RoomManager};
 
 // Test environment using system RNG (std::time::Instant)
 #[derive(Clone)]
@@ -32,8 +32,59 @@ fn room_manager_new_has_no_rooms() {
 }
 
 #[test]
-fn room_manager_has_room_after_creation() {
-    // This will fail until Task 2.2 implements create_room()
-    // For now, just verify the type compiles
-    let _manager = RoomManager::<TestEnv>::new();
+fn create_room_succeeds_for_new_room() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+    let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    let creator = 42;
+
+    let result = manager.create_room(room_id, creator, &env);
+    assert!(result.is_ok());
+    assert!(manager.has_room(room_id));
+}
+
+#[test]
+fn create_room_rejects_duplicate() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+    let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    let creator = 42;
+
+    // First creation succeeds
+    manager.create_room(room_id, creator, &env).unwrap();
+
+    // Second creation fails
+    let result = manager.create_room(room_id, creator, &env);
+    assert!(matches!(result, Err(RoomError::RoomAlreadyExists(_))));
+}
+
+#[test]
+fn create_room_stores_metadata() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+    let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    let creator = 42;
+
+    manager.create_room(room_id, creator, &env).unwrap();
+
+    // Metadata should be stored (we'll verify this when we add getter methods)
+    assert!(manager.has_room(room_id));
+}
+
+#[test]
+fn create_multiple_rooms() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+
+    let room1 = 0x1111_1111_1111_1111_1111_1111_1111_1111;
+    let room2 = 0x2222_2222_2222_2222_2222_2222_2222_2222;
+    let room3 = 0x3333_3333_3333_3333_3333_3333_3333_3333;
+
+    manager.create_room(room1, 1, &env).unwrap();
+    manager.create_room(room2, 2, &env).unwrap();
+    manager.create_room(room3, 3, &env).unwrap();
+
+    assert!(manager.has_room(room1));
+    assert!(manager.has_room(room2));
+    assert!(manager.has_room(room3));
 }
