@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 
-use kalandra_proto::Frame;
+use kalandra_proto::{Frame, Opcode};
 
 use crate::{
     env::Environment,
@@ -139,6 +139,13 @@ where
         self.room_metadata.contains_key(&room_id)
     }
 
+    /// Get the current epoch for a room.
+    ///
+    /// Returns `None` if the room doesn't exist.
+    pub fn epoch(&self, room_id: u128) -> Option<u64> {
+        self.groups.get(&room_id).map(|g| g.epoch())
+    }
+
     /// Creates a room with the specified ID and records the creator for
     /// future authorization checks. Prevents duplicate room creation.
     ///
@@ -165,6 +172,25 @@ where
         Ok(())
     }
 
+    /// Add members to a room by their KeyPackages.
+    ///
+    /// Creates MLS commits and welcomes for adding new members.
+    /// The returned actions should be executed by the driver.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RoomError::RoomNotFound` if the room doesn't exist.
+    /// Returns `RoomError::MlsValidation` if MLS operations fail.
+    pub fn add_members(
+        &mut self,
+        room_id: u128,
+        key_packages: &[Vec<u8>],
+    ) -> Result<Vec<crate::mls::MlsAction>, RoomError> {
+        let group = self.groups.get_mut(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
+        let actions = group.add_members_from_bytes(key_packages)?;
+        Ok(actions)
+    }
+
     /// Process a frame through MLS validation and sequencing
     ///
     /// This method orchestrates the full frame processing pipeline:
@@ -182,7 +208,7 @@ where
     pub fn process_frame(
         &mut self,
         frame: Frame,
-        _env: &E, // TODO: integrate this
+        _env: &E,
         storage: &impl Storage,
     ) -> Result<Vec<RoomAction>, RoomError> {
         // 1. Room must exist (no lazy creation)
@@ -192,11 +218,15 @@ where
         // 2. Validate frame against MLS state
         group.validate_frame(&frame, storage)?;
 
+        // Check if this is a Commit before sequencing (we need the frame later)
+        let is_commit = frame.header.opcode_enum() == Some(Opcode::Commit);
+        let frame_for_mls = if is_commit { Some(frame.clone()) } else { None };
+
         // 3. Sequence the frame (assign log index)
         let sequencer_actions = self.sequencer.process_frame(frame, storage)?;
 
         // 4. Convert SequencerAction to RoomAction
-        let room_actions = sequencer_actions
+        let mut room_actions: Vec<RoomAction> = sequencer_actions
             .into_iter()
             .map(|action| match action {
                 SequencerAction::AcceptFrame { room_id, log_index, frame } => {
@@ -214,12 +244,22 @@ where
             })
             .collect();
 
-        // TODO: Update MLS state if this was a commit
-        // Currently the sequencer validates against MLS state but doesn't update it.
-        // We need to:
-        // 1. Check if frame is a Commit
-        // 2. Call group.apply_commit(&frame, env)
-        // 3. Return PersistMlsState action
+        // 5. Update MLS state if this was a Commit
+        if frame_for_mls.is_some() {
+            let group = self.groups.get_mut(&room_id).ok_or(RoomError::RoomNotFound(room_id))?;
+
+            if group.has_mls_pending_commit() {
+                // We created this commit - merge our pending state
+                group.merge_pending_commit()?;
+            } else {
+                // TODO: Process commits from other senders. Right now, the
+                // server is always the commiter.
+            }
+
+            // Export the updated MLS state for persistence
+            let state = group.export_group_state();
+            room_actions.push(RoomAction::PersistMlsState { room_id, state });
+        }
 
         Ok(room_actions)
     }

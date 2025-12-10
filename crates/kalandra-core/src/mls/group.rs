@@ -6,6 +6,7 @@ use openmls_basic_credential::SignatureKeyPair;
 use tls_codec::{Deserialize, Serialize};
 
 use super::{
+    MlsGroupState,
     error::MlsError,
     provider::MlsProvider,
     validator::{MlsValidator, ValidationResult},
@@ -223,6 +224,30 @@ impl<E: Environment> MlsGroup<E> {
             .as_ref()
             .map(|pending| now - pending.sent_at >= timeout)
             .unwrap_or(false)
+    }
+
+    /// Merge the pending commit after it has been confirmed by the sequencer.
+    ///
+    /// This is called when we created a commit (e.g., via add_members) and
+    /// the sequencer has confirmed it. This advances the group's epoch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's no pending commit or if merging fails.
+    pub fn merge_pending_commit(&mut self) -> Result<(), MlsError> {
+        self.mls_group
+            .merge_pending_commit(&self.provider)
+            .map_err(|e| MlsError::Crypto(format!("Failed to merge pending commit: {}", e)))?;
+
+        // Clear our pending commit tracking
+        self.pending_commit = None;
+
+        Ok(())
+    }
+
+    /// Check if the OpenMLS group has a pending commit.
+    pub fn has_mls_pending_commit(&self) -> bool {
+        self.mls_group.pending_commit().is_some()
     }
 
     /// Validate a frame against this group's MLS state
@@ -450,6 +475,38 @@ impl<E: Environment> MlsGroup<E> {
         // the entire group state including key schedule, tree, etc.
         self.export_secret("group_state", b"", 64)
             .map_err(|e| MlsError::Crypto(format!("Failed to export group state: {}", e)))
+    }
+
+    /// Export the current group state as an MlsGroupState struct.
+    ///
+    /// This is used by the RoomManager to persist MLS state after processing
+    /// commits. It includes the lightweight validation data (epoch, members)
+    /// plus the serialized OpenMLS state.
+    pub fn export_group_state(&self) -> super::MlsGroupState {
+        let members: Vec<u64> = self
+            .mls_group
+            .members()
+            .filter_map(|m| {
+                let identity = m.credential.serialized_content();
+                if identity.len() >= 8 {
+                    Some(u64::from_le_bytes(identity[..8].try_into().ok()?))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Note: OpenMLS doesn't expose tree_hash() directly on MlsGroup.
+        // For now, derive a hash from the epoch secret as a proxy.
+        // In production, we'd need to compute this from the ratchet tree.
+        let tree_hash: [u8; 32] = self
+            .export_secret("tree_hash_proxy", b"", 32)
+            .map(|v| v.try_into().unwrap_or([0u8; 32]))
+            .unwrap_or([0u8; 32]);
+
+        let openmls_state = self.export_state().unwrap_or_default();
+
+        MlsGroupState::new(self.room_id, self.epoch(), tree_hash, members, openmls_state)
     }
 
     /// Generate a KeyPackage for joining groups.

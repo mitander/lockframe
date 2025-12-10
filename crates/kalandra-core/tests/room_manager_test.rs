@@ -206,3 +206,88 @@ fn process_frame_rejects_wrong_epoch() {
     let result = manager.process_frame(frame, &env, &storage);
     assert!(matches!(result, Err(RoomError::MlsValidation(_))));
 }
+
+/// Test that RoomManager advances epoch after processing a Commit.
+///
+/// This test exposes a critical wiring bug: RoomManager validates frames
+/// against MLS state but never updates the MLS state when processing commits.
+/// After a commit advances the epoch, subsequent frames at the new epoch
+/// should be accepted.
+#[test]
+fn process_commit_advances_epoch() {
+    let env = TestEnv;
+    let mut manager = RoomManager::new();
+    let storage = MemoryStorage::new();
+
+    let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+    let creator = 42;
+
+    // Step 1: Create room (epoch 0)
+    manager.create_room(room_id, creator, &env).unwrap();
+    assert_eq!(manager.epoch(room_id), Some(0), "Room should start at epoch 0");
+
+    // Step 2: Store initial MLS state for validation
+    use kalandra_core::mls::MlsGroupState;
+    let mls_state = MlsGroupState::new(room_id, 0, [0u8; 32], vec![creator], vec![]);
+    storage.store_mls_state(room_id, &mls_state).unwrap();
+
+    // Step 3: Generate a KeyPackage for a new member
+    use kalandra_core::mls::MlsGroup;
+    let new_member_id = 100u64;
+    let (key_package_bytes, _hash) =
+        MlsGroup::generate_key_package(env.clone(), new_member_id).expect("generate key package");
+
+    // Step 4: Add member - creates a Commit and pending state
+    use kalandra_core::mls::MlsAction;
+    let add_actions =
+        manager.add_members(room_id, &[key_package_bytes]).expect("add_members should succeed");
+
+    // Epoch should still be 0 (commit not merged yet)
+    assert_eq!(manager.epoch(room_id), Some(0), "Epoch should be 0 before commit processed");
+
+    // Find the Commit frame from the actions
+    let commit_frame = add_actions
+        .iter()
+        .find_map(|a| match a {
+            MlsAction::SendCommit(frame) => Some(frame.clone()),
+            _ => None,
+        })
+        .expect("add_members should produce a Commit frame");
+
+    // Step 5: Process the commit through RoomManager (as if returned by sequencer)
+    let mut header = commit_frame.header.clone();
+    header.set_room_id(room_id);
+    header.set_sender_id(creator);
+    header.set_epoch(0); // Commit is sent at current epoch
+    let commit_frame = Frame::new(header, commit_frame.payload);
+
+    let result = manager.process_frame(commit_frame, &env, &storage);
+    assert!(result.is_ok(), "process_frame should succeed");
+
+    // CRITICAL ORACLE: Epoch should advance to 1 after processing the commit
+    assert_eq!(
+        manager.epoch(room_id),
+        Some(1),
+        "Epoch should advance to 1 after processing Commit"
+    );
+
+    // Step 6: Update MLS state in storage to reflect new epoch
+    let mls_state = MlsGroupState::new(room_id, 1, [0u8; 32], vec![creator, new_member_id], vec![]);
+    storage.store_mls_state(room_id, &mls_state).unwrap();
+
+    // Step 7: Send a message at epoch 1 - should be accepted
+    let mut header = FrameHeader::new(Opcode::AppMessage);
+    header.set_room_id(room_id);
+    header.set_sender_id(creator);
+    header.set_epoch(1); // New epoch after commit
+    let msg_frame = Frame::new(header, Bytes::from("message at epoch 1"));
+
+    let result = manager.process_frame(msg_frame, &env, &storage);
+
+    // ORACLE: Message at epoch 1 should be accepted
+    assert!(
+        result.is_ok(),
+        "Message at epoch 1 should be accepted after commit. Error: {:?}",
+        result.err()
+    );
+}
