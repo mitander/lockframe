@@ -1,5 +1,8 @@
 //! MLS group state for storage and validation
 
+use std::collections::HashMap;
+
+use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 
 /// Minimal MLS group state for validation and persistence
@@ -39,6 +42,13 @@ pub struct MlsGroupState {
     /// Used for validation: only members can send messages
     pub members: Vec<u64>,
 
+    /// Map of member ID to their Ed25519 public key (32 bytes)
+    ///
+    /// Used for signature verification on incoming frames.
+    /// Keys are extracted from MLS credentials when exporting group state.
+    #[serde(default)]
+    pub member_keys: HashMap<u64, [u8; 32]>,
+
     /// Serialized OpenMLS group state (opaque blob)
     ///
     /// This is the full MlsGroup from openmls, serialized.
@@ -57,7 +67,19 @@ impl MlsGroupState {
         members: Vec<u64>,
         openmls_state: Vec<u8>,
     ) -> Self {
-        Self { room_id, epoch, tree_hash, members, openmls_state }
+        Self { room_id, epoch, tree_hash, members, member_keys: HashMap::new(), openmls_state }
+    }
+
+    /// Create a new MLS group state with public keys for signature verification
+    pub fn with_keys(
+        room_id: u128,
+        epoch: u64,
+        tree_hash: [u8; 32],
+        members: Vec<u64>,
+        member_keys: HashMap<u64, [u8; 32]>,
+        openmls_state: Vec<u8>,
+    ) -> Self {
+        Self { room_id, epoch, tree_hash, members, member_keys, openmls_state }
     }
 
     /// Check if a member is in the group
@@ -68,6 +90,13 @@ impl MlsGroupState {
     /// Get the number of members in the group
     pub fn member_count(&self) -> usize {
         self.members.len()
+    }
+
+    /// Get a member's public key for signature verification
+    ///
+    /// Returns `None` if the member doesn't exist or has no stored key.
+    pub fn member_key(&self, member_id: u64) -> Option<VerifyingKey> {
+        self.member_keys.get(&member_id).and_then(|bytes| VerifyingKey::from_bytes(bytes).ok())
     }
 }
 

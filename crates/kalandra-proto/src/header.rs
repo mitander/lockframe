@@ -282,6 +282,14 @@ impl FrameHeader {
     pub fn set_epoch(&mut self, epoch: u64) {
         self.epoch = epoch.to_be_bytes();
     }
+
+    /// Set the Ed25519 signature
+    ///
+    /// The signature should be computed over the first 64 bytes of the header
+    /// (everything before the signature field).
+    pub fn set_signature(&mut self, signature: [u8; 64]) {
+        self.signature = signature;
+    }
 }
 
 // Manual Debug implementation (can't derive due to packed repr)

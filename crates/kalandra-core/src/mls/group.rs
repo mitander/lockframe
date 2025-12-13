@@ -1,8 +1,11 @@
 //! Client-side MLS group state machine.
 
-use kalandra_proto::Frame;
+use std::collections::HashMap;
+
+use kalandra_proto::{Frame, FrameHeader, Opcode};
 use openmls::{key_packages::KeyPackageIn, prelude::*};
 use openmls_basic_credential::SignatureKeyPair;
+use openmls_traits::signatures::Signer;
 use tls_codec::{Deserialize, Serialize};
 
 use super::{
@@ -197,6 +200,24 @@ impl<E: Environment> MlsGroup<E> {
         self.mls_group.own_leaf_index().u32()
     }
 
+    /// Sign a frame header using this group's MLS signature key.
+    ///
+    /// The signature is computed over the first 64 bytes of the header
+    /// (the routing/sequencing data, excluding the signature field itself).
+    /// The signature is set directly on the header.
+    pub fn sign_frame_header(&self, header: &mut FrameHeader) {
+        let header_bytes = header.to_bytes();
+        let signed_data = &header_bytes[..64];
+
+        if let Ok(signature) = self.signer.sign(signed_data) {
+            if signature.len() == 64 {
+                let mut sig_bytes = [0u8; 64];
+                sig_bytes.copy_from_slice(&signature);
+                header.set_signature(sig_bytes);
+            }
+        }
+    }
+
     /// Get all member leaf indices in the group.
     ///
     /// Returns the leaf indices of all current group members, which are
@@ -255,7 +276,6 @@ impl<E: Environment> MlsGroup<E> {
             .merge_pending_commit(&self.provider)
             .map_err(|e| MlsError::Crypto(format!("Failed to merge pending commit: {}", e)))?;
 
-        // Clear our pending commit tracking
         self.pending_commit = None;
 
         Ok(())
@@ -276,15 +296,12 @@ impl<E: Environment> MlsGroup<E> {
     ///
     /// Returns `MlsError` if validation fails.
     pub fn validate_frame(&self, frame: &Frame, storage: &impl Storage) -> Result<(), MlsError> {
-        // Try to load MLS state from storage first
-        // If not found (e.g., newly created group), use validate_frame_no_state
         let validation_result = if let Some(mls_state) = storage
             .load_mls_state(self.room_id)
             .map_err(|e| MlsError::Crypto(format!("Failed to load MLS state: {}", e)))?
         {
             MlsValidator::validate_frame(frame, self.epoch(), &mls_state)?
         } else {
-            // No MLS state in storage yet - validate without state (epoch 0 check)
             MlsValidator::validate_frame_no_state(frame)?
         };
 
@@ -383,10 +400,7 @@ impl<E: Environment> MlsGroup<E> {
             .tls_serialize_detached()
             .map_err(|e| MlsError::Serialization(format!("Failed to serialize message: {}", e)))?;
 
-        let frame = Frame {
-            header: kalandra_proto::FrameHeader::new(kalandra_proto::Opcode::AppMessage),
-            payload: payload.into(),
-        };
+        let frame = Frame { header: FrameHeader::new(Opcode::AppMessage), payload: payload.into() };
 
         Ok(vec![MlsAction::SendMessage(frame)])
     }
@@ -496,28 +510,34 @@ impl<E: Environment> MlsGroup<E> {
     /// Export the current group state as an MlsGroupState struct.
     ///
     /// This is used by the RoomManager to persist MLS state after processing
-    /// commits. It includes the lightweight validation data (epoch, members)
-    /// plus the serialized OpenMLS state.
+    /// commits. It includes the lightweight validation data (epoch, members,
+    /// public keys) plus the serialized OpenMLS state.
     pub fn export_group_state(&self) -> super::MlsGroupState {
-        let members: Vec<u64> = self
-            .mls_group
-            .members()
-            .filter_map(|m| {
-                let identity = m.credential.serialized_content();
-                if identity.len() >= 8 {
-                    Some(u64::from_le_bytes(identity[..8].try_into().ok()?))
-                } else {
-                    None
+        let mut members = Vec::new();
+        let mut member_keys = HashMap::new();
+
+        for m in self.mls_group.members() {
+            let identity = m.credential.serialized_content();
+            if identity.len() >= 8 {
+                if let Ok(id_bytes) = identity[..8].try_into() {
+                    let member_id = u64::from_le_bytes(id_bytes);
+                    members.push(member_id);
+
+                    if m.signature_key.len() == 32 {
+                        if let Ok(key_bytes) = m.signature_key.as_slice().try_into() {
+                            member_keys.insert(member_id, key_bytes);
+                        }
+                    }
                 }
-            })
-            .collect();
+            }
+        }
 
         let tree_hash: [u8; 32] =
             self.mls_group.export_group_context().tree_hash().try_into().unwrap_or([0u8; 32]);
 
         let state = self.export_state().unwrap_or_default();
 
-        MlsGroupState::new(self.room_id, self.epoch(), tree_hash, members, state)
+        MlsGroupState::with_keys(self.room_id, self.epoch(), tree_hash, members, member_keys, state)
     }
 
     /// Generate a KeyPackage for joining groups.
@@ -665,10 +685,8 @@ impl<E: Environment> MlsGroup<E> {
             .tls_serialize_detached()
             .map_err(|e| MlsError::Serialization(format!("Failed to serialize commit: {}", e)))?;
 
-        let commit_frame = Frame {
-            header: kalandra_proto::FrameHeader::new(kalandra_proto::Opcode::Commit),
-            payload: commit_payload.into(),
-        };
+        let commit_frame =
+            Frame { header: FrameHeader::new(Opcode::Commit), payload: commit_payload.into() };
 
         actions.push(MlsAction::SendCommit(commit_frame));
 
@@ -676,10 +694,8 @@ impl<E: Environment> MlsGroup<E> {
             .tls_serialize_detached()
             .map_err(|e| MlsError::Serialization(format!("Failed to serialize welcome: {}", e)))?;
 
-        let welcome_frame = Frame {
-            header: kalandra_proto::FrameHeader::new(kalandra_proto::Opcode::Welcome),
-            payload: welcome_payload.into(),
-        };
+        let welcome_frame =
+            Frame { header: FrameHeader::new(Opcode::Welcome), payload: welcome_payload.into() };
 
         for kp in &key_packages {
             let recipient = extract_member_id_from_credential(kp.leaf_node().credential())?;
@@ -729,10 +745,8 @@ impl<E: Environment> MlsGroup<E> {
             .tls_serialize_detached()
             .map_err(|e| MlsError::Serialization(format!("Failed to serialize commit: {}", e)))?;
 
-        let commit_frame = Frame {
-            header: kalandra_proto::FrameHeader::new(kalandra_proto::Opcode::Commit),
-            payload: commit_payload.into(),
-        };
+        let commit_frame =
+            Frame { header: FrameHeader::new(Opcode::Commit), payload: commit_payload.into() };
 
         actions.push(MlsAction::SendCommit(commit_frame));
 
@@ -768,10 +782,8 @@ impl<E: Environment> MlsGroup<E> {
             .tls_serialize_detached()
             .map_err(|e| MlsError::Serialization(format!("Failed to serialize proposal: {}", e)))?;
 
-        let proposal_frame = Frame {
-            header: kalandra_proto::FrameHeader::new(kalandra_proto::Opcode::Proposal),
-            payload: proposal_payload.into(),
-        };
+        let proposal_frame =
+            Frame { header: FrameHeader::new(Opcode::Proposal), payload: proposal_payload.into() };
 
         actions.push(MlsAction::SendProposal(proposal_frame));
 

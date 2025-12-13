@@ -1,9 +1,10 @@
 //! MLS frame validation for server sequencing
 //!
 //! This module provides minimal validation logic needed by the Sequencer.
-//! It validates frames against current MLS state (epoch and membership)
-//! without performing full MLS operations.
+//! It validates frames against current MLS state (epoch, membership, and
+//! signature) without performing full MLS operations.
 
+use ed25519_dalek::{Signature, Verifier};
 use kalandra_proto::Frame;
 
 use super::{MlsError, MlsGroupState, constants::MAX_EPOCH};
@@ -26,10 +27,10 @@ pub enum ValidationResult {
 /// This validator performs lightweight checks needed by the sequencer:
 /// - Epoch validation (frame matches current MLS epoch)
 /// - Membership validation (sender is in the group)
+/// - Signature verification (Ed25519 over frame header)
 ///
 /// It does NOT perform:
 /// - Full MLS proposal/commit processing
-/// - Signature verification (TODO: Phase 2 extension)
 /// - Tree hash validation
 pub struct MlsValidator;
 
@@ -66,11 +67,27 @@ impl MlsValidator {
 
         debug_assert!(group_state.is_member(sender_id));
 
-        // TODO: Verify signature
-        // Currently we trust the client signature. In production, we would:
-        // - Extract sender's public key from group_state
-        // - Verify Ed25519 signature over frame header
-        // - Return Reject if signature invalid
+        if let Some(verifying_key) = group_state.member_key(sender_id) {
+            let signature_bytes = frame.header.signature();
+
+            let signature: Signature = match signature_bytes.as_slice().try_into() {
+                Ok(sig) => sig,
+                Err(_) => {
+                    return Ok(ValidationResult::Reject {
+                        reason: "invalid signature format".to_string(),
+                    });
+                },
+            };
+
+            let header_bytes = frame.header.to_bytes();
+            let signed_data = &header_bytes[..64];
+
+            if verifying_key.verify(signed_data, &signature).is_err() {
+                return Ok(ValidationResult::Reject {
+                    reason: format!("signature verification failed for sender {}", sender_id),
+                });
+            }
+        }
 
         Ok(ValidationResult::Accept)
     }
@@ -86,8 +103,7 @@ impl MlsValidator {
     /// Note: Validation failures return `Ok(ValidationResult::Reject)`, not
     /// errors.
     pub fn validate_frame_no_state(frame: &Frame) -> Result<ValidationResult, MlsError> {
-        // NOTE: Accepts all frames when no MLS state exists
-        // In production, we might want to:
+        // TODO: Right now we accept all frames here, we might want to:
         // - Check that epoch is 0
         // - Validate frame is a Welcome or initial Commit
         // - Verify creator's credentials
@@ -215,5 +231,92 @@ mod tests {
             },
             ValidationResult::Accept => panic!("Expected rejection for non-zero epoch"),
         }
+    }
+
+    #[test]
+    fn test_valid_signature_accepted() {
+        use std::collections::HashMap;
+
+        use ed25519_dalek::{Signer, SigningKey};
+
+        // Generate a signing key pair
+        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+        let verifying_key = signing_key.verifying_key();
+
+        // Create a frame and sign it
+        let mut header = FrameHeader::new(Opcode::AppMessage);
+        header.set_sender_id(100);
+        header.set_epoch(5);
+        header.set_room_id(100);
+
+        // Get header bytes and sign the first 64 bytes
+        let header_bytes = header.to_bytes();
+        let signed_data = &header_bytes[..64];
+        let signature = signing_key.sign(signed_data);
+
+        // Set the signature in the header
+        let mut signed_header = header;
+        signed_header.set_signature(signature.to_bytes());
+
+        let frame = Frame::new(signed_header, Bytes::new());
+
+        // Create state with the public key
+        let mut member_keys = HashMap::new();
+        member_keys.insert(100, verifying_key.to_bytes());
+        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys, vec![]);
+
+        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        assert_eq!(result, ValidationResult::Accept);
+    }
+
+    #[test]
+    fn test_invalid_signature_rejected() {
+        use std::collections::HashMap;
+
+        use ed25519_dalek::{Signer, SigningKey};
+
+        // Generate two different key pairs
+        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+        let wrong_verifying_key = SigningKey::generate(&mut rand::thread_rng()).verifying_key();
+
+        // Create a frame and sign it with one key
+        let mut header = FrameHeader::new(Opcode::AppMessage);
+        header.set_sender_id(100);
+        header.set_epoch(5);
+        header.set_room_id(100);
+
+        let header_bytes = header.to_bytes();
+        let signed_data = &header_bytes[..64];
+        let signature = signing_key.sign(signed_data);
+
+        let mut signed_header = header;
+        signed_header.set_signature(signature.to_bytes());
+
+        let frame = Frame::new(signed_header, Bytes::new());
+
+        // Create state with the WRONG public key
+        let mut member_keys = HashMap::new();
+        member_keys.insert(100, wrong_verifying_key.to_bytes());
+        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys, vec![]);
+
+        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+
+        match result {
+            ValidationResult::Reject { reason } => {
+                assert!(reason.contains("signature verification failed"));
+            },
+            ValidationResult::Accept => panic!("Expected rejection for invalid signature"),
+        }
+    }
+
+    #[test]
+    fn test_no_key_skips_signature_check() {
+        // Frame without signature verification (no public key stored)
+        let frame = create_test_frame(100, 5);
+        let state = create_test_state(5, vec![100, 200, 300]);
+
+        // Should still accept (backwards compatibility)
+        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        assert_eq!(result, ValidationResult::Accept);
     }
 }

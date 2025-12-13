@@ -34,6 +34,9 @@ openmls_basic_credential = "0.4"
 openmls_memory_storage = "0.4"
 rand = "0.8"
 
+# Ed25519 signatures for frame authentication
+ed25519-dalek = { version = "2.1", features = ["serde"] }
+
 [dev-dependencies]
 # Property-based testing
 proptest = "1.5"

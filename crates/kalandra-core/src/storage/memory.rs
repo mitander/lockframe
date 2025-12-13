@@ -355,13 +355,8 @@ mod tests {
         assert_eq!(storage.load_mls_state(room_id).expect("load failed"), None);
 
         // Store state
-        let state = MlsGroupState {
-            room_id,
-            epoch: 5,
-            tree_hash: [42u8; 32],
-            members: vec![100, 200, 300],
-            openmls_state: vec![1, 2, 3, 4],
-        };
+        let state =
+            MlsGroupState::new(room_id, 5, [42u8; 32], vec![100, 200, 300], vec![1, 2, 3, 4]);
         storage.store_mls_state(room_id, &state).expect("store failed");
 
         // Load state back
@@ -381,23 +376,11 @@ mod tests {
         let room_id = 100;
 
         // Store initial state
-        let state1 = MlsGroupState {
-            room_id,
-            epoch: 5,
-            tree_hash: [1u8; 32],
-            members: vec![100],
-            openmls_state: vec![],
-        };
+        let state1 = MlsGroupState::new(room_id, 5, [1u8; 32], vec![100], vec![]);
         storage.store_mls_state(room_id, &state1).expect("store failed");
 
         // Overwrite with new state
-        let state2 = MlsGroupState {
-            room_id,
-            epoch: 6,
-            tree_hash: [2u8; 32],
-            members: vec![100, 200],
-            openmls_state: vec![],
-        };
+        let state2 = MlsGroupState::new(room_id, 6, [2u8; 32], vec![100, 200], vec![]);
         storage.store_mls_state(room_id, &state2).expect("store failed");
 
         // Load should return latest state

@@ -217,6 +217,8 @@ impl<E: Environment> Client<E> {
         header.set_sender_id(self.identity.sender_id);
         header.set_epoch(room.mls_group.epoch());
 
+        room.mls_group.sign_frame_header(&mut header);
+
         let frame = Frame::new(header, payload);
 
         Ok(vec![ClientAction::Send(frame)])
