@@ -52,5 +52,6 @@ pub mod error;
 pub mod mls;
 pub mod room_manager;
 pub mod sequencer;
+pub mod server;
 pub mod storage;
 pub mod transport;
