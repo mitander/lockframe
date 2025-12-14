@@ -12,6 +12,9 @@ kalandra-proto = { path = "../kalandra-proto" }
 # Async trait support
 async-trait = "0.1"
 
+# Buffer management
+bytes = "1.9"
+
 # Deterministic simulation
 turmoil = "0.7.0"
 
