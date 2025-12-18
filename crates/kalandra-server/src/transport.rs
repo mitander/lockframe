@@ -102,6 +102,11 @@ impl QuinnConnection {
     pub fn remote_addr(&self) -> SocketAddr {
         self.connection.remote_address()
     }
+
+    /// Close the connection with an error code and reason.
+    pub fn close(&self, error_code: quinn::VarInt, reason: &[u8]) {
+        self.connection.close(error_code, reason);
+    }
 }
 
 /// Load TLS configuration from certificate and key files.

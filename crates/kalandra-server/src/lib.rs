@@ -31,7 +31,7 @@ pub mod storage;
 mod system_env;
 mod transport;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bytes::BytesMut;
 pub use driver::{LogLevel, ServerAction, ServerConfig as DriverConfig, ServerDriver, ServerEvent};
@@ -44,8 +44,17 @@ pub use sequencer::{Sequencer, SequencerAction, SequencerError};
 pub use server_error::{ExecutorError, ServerError as DriverError};
 pub use storage::{ChaoticStorage, MemoryStorage, Storage, StorageError};
 pub use system_env::SystemEnv;
+use tokio::sync::RwLock;
 pub use transport::{QuinnConnection, QuinnTransport};
 use zerocopy::FromBytes;
+
+/// Shared state for all connections.
+///
+/// This holds the connection map for broadcasts and closes.
+struct SharedState {
+    /// Map of connection ID to QUIC connection
+    connections: RwLock<HashMap<u64, QuinnConnection>>,
+}
 
 /// Server configuration for the production runtime.
 #[derive(Debug, Clone)]
@@ -109,16 +118,18 @@ impl Server {
         tracing::info!("Server starting on {}", self.transport.local_addr()?);
 
         let driver = Arc::new(tokio::sync::Mutex::new(self.driver));
+        let shared = Arc::new(SharedState { connections: RwLock::new(HashMap::new()) });
         let env = self.env;
 
         loop {
             match self.transport.accept().await {
                 Ok(conn) => {
                     let driver = Arc::clone(&driver);
+                    let shared = Arc::clone(&shared);
                     let env = env.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(conn, driver, env).await {
+                        if let Err(e) = handle_connection(conn, driver, shared, env).await {
                             tracing::error!("Connection error: {}", e);
                         }
                     });
@@ -140,6 +151,7 @@ impl Server {
 async fn handle_connection(
     conn: QuinnConnection,
     driver: Arc<tokio::sync::Mutex<ServerDriver<SystemEnv, MemoryStorage>>>,
+    shared: Arc<SharedState>,
     _env: SystemEnv,
 ) -> Result<(), ServerError> {
     let conn_id = {
@@ -151,19 +163,24 @@ async fn handle_connection(
     tracing::debug!("New connection: {}", conn_id);
 
     {
+        let mut connections = shared.connections.write().await;
+        connections.insert(conn_id, conn.clone());
+    }
+
+    {
         let mut driver = driver.lock().await;
         let actions = driver.process_event(ServerEvent::ConnectionAccepted { conn_id })?;
-        execute_actions(&mut *driver, actions, &conn).await?;
+        execute_actions(&mut *driver, actions, &shared).await?;
     }
 
     loop {
         match conn.accept_bi().await {
             Ok((send, recv)) => {
                 let driver = Arc::clone(&driver);
-                let conn = conn.clone();
+                let shared = Arc::clone(&shared);
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_stream(conn_id, send, recv, driver, &conn).await {
+                    if let Err(e) = handle_stream(conn_id, send, recv, driver, &shared).await {
                         tracing::debug!("Stream error: {}", e);
                     }
                 });
@@ -173,6 +190,11 @@ async fn handle_connection(
                 break;
             },
         }
+    }
+
+    {
+        let mut connections = shared.connections.write().await;
+        connections.remove(&conn_id);
     }
 
     {
@@ -192,7 +214,7 @@ async fn handle_stream(
     send: quinn::SendStream,
     mut recv: quinn::RecvStream,
     driver: Arc<tokio::sync::Mutex<ServerDriver<SystemEnv, MemoryStorage>>>,
-    conn: &QuinnConnection,
+    shared: &Arc<SharedState>,
 ) -> Result<(), ServerError> {
     drop(send); // not used for now
 
@@ -249,7 +271,7 @@ async fn handle_stream(
 
         {
             let mut driver = driver.lock().await;
-            execute_actions(&mut *driver, actions, conn).await?;
+            execute_actions(&mut *driver, actions, shared).await?;
         }
     }
 
@@ -260,17 +282,22 @@ async fn handle_stream(
 async fn execute_actions(
     driver: &mut ServerDriver<SystemEnv, MemoryStorage>,
     actions: Vec<ServerAction<std::time::Instant>>,
-    conn: &QuinnConnection,
+    shared: &SharedState,
 ) -> Result<(), ServerError> {
     for action in actions {
         match action {
-            ServerAction::SendToSession { frame, .. } => {
-                let mut buf = Vec::new();
-                frame.encode(&mut buf).map_err(|e| ServerError::Protocol(e.to_string()))?;
+            ServerAction::SendToSession { session_id, frame } => {
+                let connections = shared.connections.read().await;
+                if let Some(conn) = connections.get(&session_id) {
+                    let mut buf = Vec::new();
+                    frame.encode(&mut buf).map_err(|e| ServerError::Protocol(e.to_string()))?;
 
-                if let Ok(mut send) = conn.open_uni().await {
-                    let _ = send.write_all(&buf).await;
-                    let _ = send.finish();
+                    if let Ok(mut send) = conn.open_uni().await {
+                        let _ = send.write_all(&buf).await;
+                        let _ = send.finish();
+                    }
+                } else {
+                    tracing::warn!("SendToSession: session {} not found", session_id);
                 }
             },
 
@@ -280,15 +307,25 @@ async fn execute_actions(
                 let mut buf = Vec::new();
                 frame.encode(&mut buf).map_err(|e| ServerError::Protocol(e.to_string()))?;
 
+                let connections = shared.connections.read().await;
                 for session_id in sessions {
                     if Some(session_id) != exclude_session {
-                        tracing::debug!("Would broadcast to session {}", session_id);
+                        if let Some(conn) = connections.get(&session_id) {
+                            if let Ok(mut send) = conn.open_uni().await {
+                                let _ = send.write_all(&buf).await;
+                                let _ = send.finish();
+                            }
+                        }
                     }
                 }
             },
 
             ServerAction::CloseConnection { session_id, reason } => {
                 tracing::info!("Closing connection {}: {}", session_id, reason);
+                let mut connections = shared.connections.write().await;
+                if let Some(conn) = connections.remove(&session_id) {
+                    conn.close(0u32.into(), reason.as_bytes());
+                }
             },
 
             ServerAction::PersistFrame { room_id, log_index, frame } => {
