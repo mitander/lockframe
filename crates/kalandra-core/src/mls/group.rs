@@ -225,6 +225,22 @@ impl<E: Environment> MlsGroup<E> {
         self.mls_group.members().map(|m| m.index.u32()).collect()
     }
 
+    /// Look up a member's ID by their leaf index.
+    ///
+    /// This is used to verify that a frame's sender_id matches the sender_index
+    /// from an encrypted payload (binding the sender identity to the key used).
+    ///
+    /// Returns `None` if no member exists at the given leaf index.
+    pub fn member_id_by_leaf_index(&self, leaf_index: u32) -> Option<MemberId> {
+        self.mls_group.members().find_map(|m| {
+            if m.index.u32() == leaf_index {
+                extract_member_id_from_credential(&m.credential).ok()
+            } else {
+                None
+            }
+        })
+    }
+
     /// Export a secret derived from the current epoch's key schedule.
     ///
     /// This is used to derive sender keys for data-plane encryption.

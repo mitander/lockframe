@@ -272,12 +272,35 @@ impl<E: Environment> Client<E> {
         let proto_encrypted = deserialize_encrypted_message(&frame.payload)
             .map_err(|e| ClientError::InvalidFrame { reason: e })?;
 
+        // Verify sender_id in header matches the sender_index from the encrypted
+        // payload. This prevents forgery where an attacker repackages a message
+        // with a different header.
+        let header_sender_id = frame.header.sender_id();
+        let verified_sender_id = room
+            .mls_group
+            .member_id_by_leaf_index(proto_encrypted.sender_index)
+            .ok_or_else(|| ClientError::InvalidFrame {
+                reason: format!(
+                    "unknown sender_index {} in encrypted payload",
+                    proto_encrypted.sender_index
+                ),
+            })?;
+
+        if header_sender_id != verified_sender_id {
+            return Err(ClientError::InvalidFrame {
+                reason: format!(
+                    "sender_id mismatch: header claims {}, but sender_index {} belongs to {}",
+                    header_sender_id, proto_encrypted.sender_index, verified_sender_id
+                ),
+            });
+        }
+
         let encrypted = proto_to_crypto_encrypted(&proto_encrypted);
         let plaintext = room.sender_keys.decrypt(&encrypted)?;
 
         Ok(vec![ClientAction::DeliverMessage {
             room_id,
-            sender_id: frame.header.sender_id(),
+            sender_id: verified_sender_id,
             plaintext,
             log_index: frame.header.log_index(),
             timestamp: frame.header.hlc_timestamp(),
