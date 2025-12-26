@@ -66,3 +66,10 @@ path = "fuzz_targets/e2e_pipeline_fuzzer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "storage_chaos_fuzzer"
+path = "fuzz_targets/storage_chaos_fuzzer.rs"
+test = false
+doc = false
+bench = false
