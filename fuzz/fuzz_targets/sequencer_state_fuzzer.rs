@@ -29,10 +29,6 @@ use lockframe_server::{
     Storage,
 };
 
-// Note: Duplicate detection is NOT a Sequencer responsibility.
-// The Sequencer only assigns monotonic log indices.
-// Content deduplication belongs in MlsValidator/RoomManager.
-
 #[derive(Debug, Clone, Arbitrary)]
 enum SequencerOp {
     ProcessFrame { room_id: RoomIdChoice, frame_type: FrameType },

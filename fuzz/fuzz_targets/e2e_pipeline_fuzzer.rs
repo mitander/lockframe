@@ -21,18 +21,15 @@
 
 #![no_main]
 
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
 
 use arbitrary::Arbitrary;
 use bytes::Bytes;
 use ed25519_dalek::{Signer, SigningKey};
 use libfuzzer_sys::fuzz_target;
-use lockframe_core::{env::Environment, mls::MlsGroupState};
+use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::{Frame, FrameHeader, Opcode};
-use lockframe_server::{storage::MemoryStorage, RoomAction, RoomManager, Storage};
+use lockframe_server::{storage::MemoryStorage, RoomAction, RoomManager, Storage, SystemEnv};
 
 #[derive(Debug, Clone, Arbitrary)]
 struct E2EScenario {
@@ -62,33 +59,8 @@ enum AttackType {
     NonMember,
 }
 
-#[derive(Clone)]
-struct FuzzEnv {
-    now: Instant,
-}
-
-impl Environment for FuzzEnv {
-    fn now(&self) -> Instant {
-        self.now
-    }
-
-    fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-        async {}
-    }
-
-    fn random_bytes(&self, buffer: &mut [u8]) {
-        for (i, byte) in buffer.iter_mut().enumerate() {
-            *byte = i as u8;
-        }
-    }
-}
-
 fuzz_target!(|scenario: E2EScenario| {
-    let base_instant = Instant::now();
-    let deterministic_offset = Duration::from_secs(scenario.seed[0] as u64);
-    let env = FuzzEnv {
-        now: base_instant.checked_add(deterministic_offset).unwrap_or(base_instant),
-    };
+    let env = SystemEnv::new();
 
     let room_id = (scenario.setup.room_id as u128).max(1);
     let member_count = (scenario.setup.member_count % 10).max(1) as usize;
