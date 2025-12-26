@@ -14,6 +14,7 @@ arbitrary = { version = "1.4", features = ["derive"] }
 lockframe-server = { path = "../crates/lockframe-server" }
 lockframe-proto = { path = "../crates/lockframe-proto" }
 lockframe-core = { path = "../crates/lockframe-core" }
+lockframe-crypto = { path = "../crates/lockframe-crypto" }
 
 bytes = "1.11"
 ed25519-dalek = "2"
@@ -70,6 +71,13 @@ bench = false
 [[bin]]
 name = "storage_chaos_fuzzer"
 path = "fuzz_targets/storage_chaos_fuzzer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sender_key_fuzzer"
+path = "fuzz_targets/sender_key_fuzzer.rs"
 test = false
 doc = false
 bench = false

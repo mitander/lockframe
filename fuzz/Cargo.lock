@@ -1248,6 +1248,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockframe-crypto"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "hkdf",
+ "hmac",
+ "sha2",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "lockframe-fuzz"
 version = "0.0.0"
 dependencies = [
@@ -1256,6 +1267,7 @@ dependencies = [
  "ed25519-dalek",
  "libfuzzer-sys",
  "lockframe-core",
+ "lockframe-crypto",
  "lockframe-proto",
  "lockframe-server",
 ]
