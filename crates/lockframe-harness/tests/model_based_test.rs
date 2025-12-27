@@ -912,6 +912,104 @@ proptest! {
             }
         }
     }
+
+    /// Verify partitioned clients cannot send messages.
+    #[test]
+    fn prop_partition_blocks_send(
+        client_id in 0..4u8,
+        room_id in any::<ModelRoomId>(),
+        content in small_message_strategy()
+    ) {
+        let mut model = ModelWorld::new(4);
+
+        let _ = model.apply(&Operation::CreateRoom { client_id, room_id });
+        let _ = model.apply(&Operation::Partition { client_id });
+
+        let result = model.apply(&Operation::SendMessage { client_id, room_id, content });
+        prop_assert!(result.is_err(), "Partitioned client should not be able to send");
+
+        if let OperationResult::Error(e) = result {
+            prop_assert_eq!(e, OperationError::Partitioned);
+        }
+    }
+
+    /// Verify healing partition restores send capability.
+    #[test]
+    fn prop_heal_partition_restores_send(
+        client_id in 0..4u8,
+        room_id in any::<ModelRoomId>(),
+        content in small_message_strategy()
+    ) {
+        let mut model = ModelWorld::new(4);
+
+        let _ = model.apply(&Operation::CreateRoom { client_id, room_id });
+        let _ = model.apply(&Operation::Partition { client_id });
+        let _ = model.apply(&Operation::HealPartition { client_id });
+
+        let result = model.apply(&Operation::SendMessage { client_id, room_id, content });
+        prop_assert!(result.is_ok(), "Healed client should be able to send");
+    }
+
+    /// Verify partitioned clients don't receive messages.
+    #[test]
+    fn prop_partition_blocks_receive(
+        sender in 0..4u8,
+        receiver in 0..4u8,
+        room_id in any::<ModelRoomId>(),
+        content in small_message_strategy()
+    ) {
+        prop_assume!(sender != receiver);
+
+        let mut model = ModelWorld::new(4);
+
+        let _ = model.apply(&Operation::CreateRoom { client_id: sender, room_id });
+        let _ = model.apply(&Operation::AddMember { inviter_id: sender, invitee_id: receiver, room_id });
+        let _ = model.apply(&Operation::Partition { client_id: receiver });
+        let _ = model.apply(&Operation::SendMessage { client_id: sender, room_id, content });
+        let _ = model.apply(&Operation::DeliverPending);
+
+        let receiver_msgs = model.client_messages(receiver, room_id);
+        prop_assert!(
+            receiver_msgs.map(|m| m.is_empty()).unwrap_or(true),
+            "Partitioned client should not receive messages"
+        );
+    }
+
+    /// Verify disconnect removes client from all rooms.
+    #[test]
+    fn prop_disconnect_clears_membership(
+        client_id in 0..4u8,
+        room_ids in prop::collection::vec(any::<ModelRoomId>(), 1..4)
+    ) {
+        let mut model = ModelWorld::new(4);
+
+        for &room_id in &room_ids {
+            let _ = model.apply(&Operation::CreateRoom { client_id, room_id });
+        }
+
+        let _ = model.apply(&Operation::Disconnect { client_id });
+
+        let rooms = model.client_rooms(client_id);
+        prop_assert!(rooms.is_empty(), "Disconnected client should have no rooms");
+    }
+
+    /// Verify disconnected client cannot perform operations.
+    #[test]
+    fn prop_disconnect_blocks_operations(
+        client_id in 0..4u8,
+        room_id in any::<ModelRoomId>()
+    ) {
+        let mut model = ModelWorld::new(4);
+
+        let _ = model.apply(&Operation::Disconnect { client_id });
+
+        let result = model.apply(&Operation::CreateRoom { client_id, room_id });
+        prop_assert!(result.is_err(), "Disconnected client should not create room");
+
+        if let OperationResult::Error(e) = result {
+            prop_assert_eq!(e, OperationError::Disconnected);
+        }
+    }
 }
 
 /// Clamp client_id to valid range for the given number of clients.
@@ -1105,5 +1203,90 @@ mod smoke_tests {
         assert_eq!(model_state.client_epochs, real_state.client_epochs);
         // Full message comparison: content, sender_id, log_index should all match
         assert_eq!(model_state.client_messages, real_state.client_messages);
+    }
+
+    #[test]
+    fn partition_blocks_send_and_receive() {
+        let mut model = ModelWorld::new(2);
+
+        model.apply(&Operation::CreateRoom { client_id: 0, room_id: 1 });
+        model.apply(&Operation::AddMember { inviter_id: 0, invitee_id: 1, room_id: 1 });
+        model.apply(&Operation::Partition { client_id: 1 });
+
+        // Partitioned client cannot send
+        let result = model.apply(&Operation::SendMessage {
+            client_id: 1,
+            room_id: 1,
+            content: SmallMessage { seed: 1, size_class: 0 },
+        });
+        assert!(result.is_err());
+
+        // Partitioned client doesn't receive
+        model.apply(&Operation::SendMessage {
+            client_id: 0,
+            room_id: 1,
+            content: SmallMessage { seed: 2, size_class: 0 },
+        });
+        model.apply(&Operation::DeliverPending);
+
+        let msgs = model.client_messages(1, 1);
+        assert!(msgs.map(|m| m.is_empty()).unwrap_or(true));
+    }
+
+    #[test]
+    fn heal_partition_restores_connectivity() {
+        let mut model = ModelWorld::new(2);
+
+        model.apply(&Operation::CreateRoom { client_id: 0, room_id: 1 });
+        model.apply(&Operation::Partition { client_id: 0 });
+        model.apply(&Operation::HealPartition { client_id: 0 });
+
+        let result = model.apply(&Operation::SendMessage {
+            client_id: 0,
+            room_id: 1,
+            content: SmallMessage { seed: 1, size_class: 0 },
+        });
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn disconnect_removes_from_all_rooms() {
+        let mut model = ModelWorld::new(2);
+
+        model.apply(&Operation::CreateRoom { client_id: 0, room_id: 1 });
+        model.apply(&Operation::CreateRoom { client_id: 0, room_id: 2 });
+
+        assert_eq!(model.client_rooms(0).len(), 2);
+
+        model.apply(&Operation::Disconnect { client_id: 0 });
+
+        assert!(model.client_rooms(0).is_empty());
+    }
+
+    #[test]
+    fn disconnect_advances_epochs_for_remaining() {
+        let mut model = ModelWorld::new(3);
+
+        model.apply(&Operation::CreateRoom { client_id: 0, room_id: 1 });
+        model.apply(&Operation::AddMember { inviter_id: 0, invitee_id: 1, room_id: 1 });
+        model.apply(&Operation::AddMember { inviter_id: 0, invitee_id: 2, room_id: 1 });
+
+        let state_before = model.observable_state();
+        let epoch_before = state_before.client_epochs[1]
+            .iter()
+            .find(|(r, _)| *r == 1)
+            .map(|(_, e)| *e)
+            .unwrap_or(0);
+
+        model.apply(&Operation::Disconnect { client_id: 2 });
+
+        let state_after = model.observable_state();
+        let epoch_after = state_after.client_epochs[1]
+            .iter()
+            .find(|(r, _)| *r == 1)
+            .map(|(_, e)| *e)
+            .unwrap_or(0);
+
+        assert_eq!(epoch_after, epoch_before + 1);
     }
 }
