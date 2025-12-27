@@ -7,3 +7,4 @@
 cc c071ceec999e29508a1020565f29301ed18978a56ac1ad5f05222756ff52b880 # shrinks to seed = 0, num_clients = 3, ops = [CreateRoom { client_id: 1, room_id: 192 }, CreateRoom { client_id: 2, room_id: 192 }]
 cc d7a2775eaf1d89cbd3d4e312cf911649eb74a983204b2254a3ebaecdbf6852d8 # shrinks to seed = 0, num_clients = 2, ops = [CreateRoom { client_id: 2, room_id: 134 }, AddMember { inviter_id: 2, invitee_id: 1, room_id: 134 }]
 cc c7f70646affd6a5af0686a1dafdd7eb521b89ff919b5668d68ace21bd6e93051 # shrinks to seed = 0, num_clients = 2, ops = [CreateRoom { client_id: 0, room_id: 77 }, SendMessage { client_id: 0, room_id: 77, content: SmallMessage { seed: 0, size_class: 0 } }]
+cc 2c4a9965a6f8b509d7cea72f4de10f93033608b9b07554dcab0a063d90c169e9 # shrinks to seed = 0, num_clients = 3, ops = [CreateRoom { client_id: 3, room_id: 229 }, AddMember { inviter_id: 3, invitee_id: 1, room_id: 229 }, SendMessage { client_id: 0, room_id: 229, content: SmallMessage { seed: 0, size_class: 0 } }]

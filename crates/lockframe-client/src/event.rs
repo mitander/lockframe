@@ -60,6 +60,14 @@ pub enum ClientEvent {
         /// MLS `KeyPackage` messages (TLS-serialized).
         key_packages: Vec<Vec<u8>>,
     },
+
+    /// Application wants to remove members from a room.
+    RemoveMembers {
+        /// Target room.
+        room_id: RoomId,
+        /// Member IDs to remove.
+        member_ids: Vec<u64>,
+    },
 }
 
 /// Serializable snapshot of room state for persistence.

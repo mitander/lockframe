@@ -142,6 +142,9 @@ impl<E: Environment> Client<E> {
             ClientEvent::AddMembers { room_id, key_packages } => {
                 self.handle_add_members(room_id, key_packages)
             },
+            ClientEvent::RemoveMembers { room_id, member_ids } => {
+                self.handle_remove_members(room_id, member_ids)
+            },
         }
     }
 
@@ -505,6 +508,20 @@ impl<E: Environment> Client<E> {
         let mls_actions = room
             .mls_group
             .add_members_from_bytes(&key_packages_bytes)
+            .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
+
+        Ok(self.convert_mls_actions(room_id, mls_actions))
+    }
+
+    fn handle_remove_members(
+        &mut self,
+        room_id: RoomId,
+        member_ids: Vec<u64>,
+    ) -> Result<Vec<ClientAction>, ClientError> {
+        let room = self.rooms.get_mut(&room_id).ok_or(ClientError::RoomNotFound { room_id })?;
+        let mls_actions = room
+            .mls_group
+            .remove_members(&member_ids)
             .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
         Ok(self.convert_mls_actions(room_id, mls_actions))
