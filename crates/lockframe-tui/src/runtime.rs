@@ -1,22 +1,34 @@
 //! Async runtime
 //!
 //! Event loop that drives terminal I/O and coordinates between the App
-//! state machine and the protocol client. This is the only impure code
-//! in the TUI crate.
+//! state machine, Bridge, and Client. Uses tokio::select! to handle terminal
+//! events and server frames concurrently.
+//!
+//! Supports two modes:
+//! - Simulation mode: In-process server for single-client testing
+//! - QUIC mode: Real QUIC connection for multi-client testing
 
 use std::io::{self, stdout};
 
 use crossterm::{
     ExecutableCommand,
-    event::{self, Event, KeyEventKind},
+    event::{Event, EventStream, KeyEventKind},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use futures::StreamExt;
+use lockframe_client::transport::{self, ConnectedClient};
+use lockframe_core::env::Environment;
+use lockframe_proto::Frame;
+use lockframe_server::SystemEnv;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use crate::{
     App,
     app::{AppAction, AppEvent},
+    bridge::Bridge,
+    server::{self, ServerHandle},
     ui,
 };
 
@@ -26,80 +38,249 @@ pub enum RuntimeError {
     /// I/O error from terminal operations.
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
+
+    /// Transport error.
+    #[error("transport error: {0}")]
+    Transport(#[from] transport::TransportError),
+}
+
+/// Connection to a server (either in-process or QUIC).
+enum Connection {
+    /// In-process simulated server.
+    InProcess(ServerHandle),
+    /// QUIC connection to remote server.
+    Quic(ConnectedClient),
+}
+
+impl Connection {
+    fn to_server(&self) -> &mpsc::Sender<Frame> {
+        match self {
+            Connection::InProcess(h) => &h.to_server,
+            Connection::Quic(h) => &h.to_server,
+        }
+    }
+
+    fn from_server(&mut self) -> &mut mpsc::Receiver<Frame> {
+        match self {
+            Connection::InProcess(h) => &mut h.from_server,
+            Connection::Quic(h) => &mut h.from_server,
+        }
+    }
+
+    fn stop(&self) {
+        match self {
+            Connection::InProcess(h) => h.stop(),
+            Connection::Quic(h) => h.stop(),
+        }
+    }
+}
+
+/// Connection mode for the runtime.
+#[derive(Clone)]
+enum ConnectionMode {
+    /// Simulation mode - spawn in-process server on /connect.
+    Simulation,
+    /// QUIC mode - connect to this server address.
+    Quic(String),
 }
 
 /// Async runtime for the TUI.
 ///
-/// Manages terminal setup/teardown and the main event loop.
+/// Manages terminal setup/teardown, the main event loop, and coordinates
+/// between App (UI) and Bridge (protocol) state machines.
 pub struct Runtime {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     app: App,
+    bridge: Bridge<SystemEnv>,
+    connection: Option<Connection>,
+    mode: ConnectionMode,
 }
 
 impl Runtime {
-    /// Create a new runtime with default server address.
+    /// Create a new runtime in simulation mode.
     pub fn new() -> Result<Self, RuntimeError> {
-        Self::with_server("localhost:8080".to_string())
+        Self::create("localhost:4433".to_string(), ConnectionMode::Simulation)
     }
 
-    /// Create a new runtime with specified server address.
-    pub fn with_server(server_addr: String) -> Result<Self, RuntimeError> {
+    /// Create a new runtime that connects to a QUIC server.
+    pub fn with_quic_server(server_addr: String) -> Result<Self, RuntimeError> {
+        Self::create(server_addr.clone(), ConnectionMode::Quic(server_addr))
+    }
+
+    fn create(display_addr: String, mode: ConnectionMode) -> Result<Self, RuntimeError> {
         enable_raw_mode()?;
         stdout().execute(EnterAlternateScreen)?;
 
         let backend = CrosstermBackend::new(stdout());
         let terminal = Terminal::new(backend)?;
-        let app = App::new(server_addr);
+        let app = App::new(display_addr);
 
-        Ok(Self { terminal, app })
+        let env = SystemEnv::new();
+        let sender_id = Environment::random_u64(&env);
+        let bridge = Bridge::new(env, sender_id);
+
+        Ok(Self { terminal, app, bridge, connection: None, mode })
     }
 
     /// Run the main event loop.
-    pub fn run(mut self) -> Result<(), RuntimeError> {
-        // Initial render
+    pub async fn run(mut self) -> Result<(), RuntimeError> {
         self.render()?;
 
+        let mut event_stream = EventStream::new();
+        let mut tick_interval = tokio::time::interval(std::time::Duration::from_millis(100));
+
         loop {
-            // Poll for events with 100ms timeout (for tick events)
-            if event::poll(std::time::Duration::from_millis(100))? {
-                let app_event = match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => AppEvent::Key(key.code),
-                    Event::Resize(cols, rows) => AppEvent::Resize(cols, rows),
-                    _ => continue,
-                };
+            // Server connection active
+            let should_quit = if let Some(ref mut conn) = self.connection {
+                tokio::select! {
+                    // Terminal events
+                    maybe_event = event_stream.next() => {
+                        match maybe_event {
+                            Some(Ok(event)) => self.handle_terminal_event(event).await?,
+                            Some(Err(e)) => return Err(RuntimeError::Io(e)),
+                            None => true,
+                        }
+                    }
 
-                let actions = self.app.handle(app_event);
+                    // Frames from server
+                    Some(frame) = conn.from_server().recv() => {
+                        let events = self.bridge.handle_frame(frame);
+                        self.process_bridge_events(events).await?
+                    }
 
-                if self.process_actions(actions)? {
-                    break;
+                    // Periodic tick
+                    _ = tick_interval.tick() => {
+                        let now = std::time::Instant::now();
+                        let events = self.bridge.handle_tick(now);
+                        self.process_bridge_events(events).await?;
+
+                        let actions = self.app.handle(AppEvent::Tick);
+                        self.process_actions(actions).await?
+                    }
                 }
             } else {
-                // Tick event on timeout
-                let actions = self.app.handle(AppEvent::Tick);
-                if self.process_actions(actions)? {
-                    break;
+                tokio::select! {
+                    // No server connection active (terminal events only)
+                    maybe_event = event_stream.next() => {
+                        match maybe_event {
+                            Some(Ok(event)) => self.handle_terminal_event(event).await?,
+                            Some(Err(e)) => return Err(RuntimeError::Io(e)),
+                            None => true,
+                        }
+                    }
+
+                    // Periodic tick
+                    _ = tick_interval.tick() => {
+                        let actions = self.app.handle(AppEvent::Tick);
+                        self.process_actions(actions).await?
+                    }
                 }
+            };
+
+            if should_quit {
+                break;
             }
         }
 
         Ok(())
     }
 
+    /// Handle a terminal event and return whether to quit.
+    async fn handle_terminal_event(&mut self, event: Event) -> Result<bool, RuntimeError> {
+        let app_event = match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => AppEvent::Key(key.code),
+            Event::Resize(cols, rows) => AppEvent::Resize(cols, rows),
+            _ => return Ok(false),
+        };
+
+        let actions = self.app.handle(app_event);
+        self.process_actions(actions).await
+    }
+
     /// Process actions returned by the app. Returns true if should quit.
-    fn process_actions(&mut self, actions: Vec<AppAction>) -> Result<bool, RuntimeError> {
-        for action in actions {
-            match action {
-                AppAction::Render => self.render()?,
-                AppAction::Quit => return Ok(true),
-                // Client operations (not yet implemented)
-                AppAction::Connect { .. }
-                | AppAction::CreateRoom { .. }
-                | AppAction::JoinRoom { .. }
-                | AppAction::LeaveRoom { .. }
-                | AppAction::SendMessage { .. } => {},
+    ///
+    /// Uses iterative processing to avoid async recursion between actions and
+    /// events.
+    async fn process_actions(
+        &mut self,
+        initial_actions: Vec<AppAction>,
+    ) -> Result<bool, RuntimeError> {
+        let mut pending_actions = initial_actions;
+
+        while !pending_actions.is_empty() {
+            let actions = std::mem::take(&mut pending_actions);
+
+            for action in actions {
+                match action {
+                    AppAction::Render => self.render()?,
+
+                    AppAction::Quit => return Ok(true),
+
+                    AppAction::Connect { .. } => {
+                        self.connect().await?;
+                    },
+
+                    // Protocol operations go through the bridge
+                    AppAction::CreateRoom { .. }
+                    | AppAction::JoinRoom { .. }
+                    | AppAction::LeaveRoom { .. }
+                    | AppAction::SendMessage { .. } => {
+                        let events = self.bridge.process_app_action(action);
+                        for event in events {
+                            let new_actions = self.app.handle(event);
+                            pending_actions.extend(new_actions);
+                        }
+                        self.send_outgoing_frames().await;
+                    },
+                }
             }
         }
         Ok(false)
+    }
+
+    /// Process events from the bridge back to the app.
+    async fn process_bridge_events(&mut self, events: Vec<AppEvent>) -> Result<bool, RuntimeError> {
+        for event in events {
+            let actions = self.app.handle(event);
+            if self.process_actions(actions).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Connect to the server based on the mode.
+    async fn connect(&mut self) -> Result<(), RuntimeError> {
+        let session_id = self.bridge.sender_id();
+
+        let connection = match &self.mode {
+            ConnectionMode::Simulation => {
+                let handle = server::spawn_server(session_id);
+                Connection::InProcess(handle)
+            },
+            ConnectionMode::Quic(addr) => {
+                let client = transport::connect(addr).await?;
+                Connection::Quic(client)
+            },
+        };
+
+        self.connection = Some(connection);
+        let _ = self.app.handle(AppEvent::Connected { session_id });
+
+        Ok(())
+    }
+
+    /// Send all pending outgoing frames to the server.
+    async fn send_outgoing_frames(&mut self) {
+        let frames = self.bridge.take_outgoing();
+        if let Some(ref conn) = self.connection {
+            for frame in frames {
+                if conn.to_server().send(frame).await.is_err() {
+                    // Server disconnected
+                    break;
+                }
+            }
+        }
     }
 
     /// Render the UI.
@@ -113,7 +294,10 @@ impl Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
-        // Restore terminal state
+        if let Some(ref conn) = self.connection {
+            conn.stop();
+        }
+
         let _ = disable_raw_mode();
         let _ = stdout().execute(LeaveAlternateScreen);
     }

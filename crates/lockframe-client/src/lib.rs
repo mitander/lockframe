@@ -16,6 +16,12 @@
 //! - [`SenderKeyStore`]: Per-room sender key ratchet management
 //! - [`ClientEvent`]: Events fed into the client
 //! - [`ClientAction`]: Actions produced by the client
+//!
+//! # Transport (optional)
+//!
+//! With the `transport` feature enabled, this crate also provides:
+//! - [`transport::ConnectedClient`]: Client with QUIC transport
+//! - [`transport::connect`]: Connect to a server
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -24,6 +30,9 @@ mod client;
 mod error;
 mod event;
 mod sender_key_store;
+
+#[cfg(feature = "transport")]
+pub mod transport;
 
 pub use client::{Client, ClientIdentity};
 pub use error::ClientError;

@@ -11,16 +11,24 @@ name = "lockframe-tui"
 path = "src/main.rs"
 
 [dependencies]
-lockframe-client = { path = "../lockframe-client" }
+lockframe-client = { path = "../lockframe-client", features = ["transport"] }
 lockframe-core = { path = "../lockframe-core" }
 lockframe-proto = { path = "../lockframe-proto" }
+lockframe-server = { path = "../lockframe-server" }
 
 # TUI framework
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
+futures = "0.3"
+
+# CLI arguments
+clap = { version = "4", features = ["derive"] }
+
+# Randomness
+rand = "0.9"
 
 # Error handling
 thiserror = "2.0"

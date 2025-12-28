@@ -17,6 +17,17 @@ ciborium = "0.2"
 # Error handling
 thiserror = "2.0"
 
+# QUIC transport (optional, for production use)
+quinn = { version = "0.11", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+tokio = { version = "1", features = ["sync", "rt"], optional = true }
+bytes = { version = "1.9", optional = true }
+zerocopy = { version = "0.8", optional = true }
+
+[features]
+default = []
+transport = ["quinn", "rustls", "tokio", "bytes", "zerocopy"]
+
 [dev-dependencies]
 # Property-based testing
 proptest = "1.5"

@@ -18,13 +18,18 @@
 //!
 //! - [`app`]: UI state machine with events and actions
 //! - [`ui`]: Rendering functions for terminal output
+//! - [`bridge`]: App↔Client translation layer
+//! - [`server`]: In-process simulated server
 //! - [`runtime`]: Async event loop (impure glue code)
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 pub mod app;
+pub mod bridge;
 pub mod runtime;
+pub mod server;
 pub mod ui;
 
 pub use app::{App, AppAction, AppEvent};
+pub use bridge::Bridge;
