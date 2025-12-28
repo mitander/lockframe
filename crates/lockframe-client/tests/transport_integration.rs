@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use lockframe_client::transport;
+use lockframe_client::transport::{self, TransportConfig};
 use lockframe_proto::{
     Frame, FrameHeader, Opcode,
     payloads::{Payload, session::Hello},
@@ -53,8 +53,12 @@ async fn client_connects_to_server() {
 
 #[tokio::test]
 async fn client_connect_fails_for_invalid_address() {
-    // No server running on this port
-    let result = transport::connect("127.0.0.1:59999").await;
+    // No server running on this port - use short timeout since we expect failure
+    let config = TransportConfig {
+        connect_timeout: Duration::from_millis(500),
+        ..TransportConfig::development()
+    };
+    let result = transport::connect_with_config("127.0.0.1:59999", config).await;
 
     assert!(result.is_err(), "should fail to connect to invalid address");
 }

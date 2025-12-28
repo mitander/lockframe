@@ -11,7 +11,7 @@
 //! - Insecure: Accepts any certificate without verification. Use this only for
 //!   development with self-signed certificates.
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use bytes::BytesMut;
 use lockframe_proto::{ALPN_PROTOCOL, Frame, FrameHeader};
@@ -20,7 +20,8 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use zerocopy::FromBytes;
 
-const TRANSPORT_IDLE_TIMEOUT: u64 = 30; // seconds
+const TRANSPORT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// TLS verification mode for client connections.
 #[derive(Debug, Clone, Copy, Default)]
@@ -32,31 +33,45 @@ pub enum TlsMode {
     Insecure,
 }
 
-/// Configuration for client transport.
+// Configuration for client transport.
+//
+/// Use [`TransportConfig::default`] for standard settings:
+/// - Secure TLS
+/// - `server_name = "localhost"`
+/// - `connect_timeout` = 5s`
+///
+/// Convenience constructors are provided for common environments.
 #[derive(Debug, Clone)]
 pub struct TransportConfig {
     /// TLS verification mode.
     pub tls_mode: TlsMode,
-    /// Server name for TLS SNI (Server Name Indication).
-    /// Defaults to "localhost".
+
+    /// Server name used for TLS SNI.
     pub server_name: String,
+
+    /// Maximum time to wait for connection establishment.
+    pub connect_timeout: Duration,
 }
 
 impl Default for TransportConfig {
     fn default() -> Self {
-        Self { tls_mode: TlsMode::default(), server_name: "localhost".to_string() }
+        Self {
+            tls_mode: TlsMode::default(),
+            server_name: "localhost".to_string(),
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+        }
     }
 }
 
 impl TransportConfig {
-    /// Create config for development (insecure TLS).
+    /// Create config for development environments (insecure TLS).
     pub fn development() -> Self {
-        Self { tls_mode: TlsMode::Insecure, server_name: "localhost".to_string() }
+        Self { tls_mode: TlsMode::Insecure, ..Default::default() }
     }
 
-    /// Create config for production with server name.
+    /// Create config for production with an explicit server name.
     pub fn production(server_name: impl Into<String>) -> Self {
-        Self { tls_mode: TlsMode::Secure, server_name: server_name.into() }
+        Self { tls_mode: TlsMode::Secure, server_name: server_name.into(), ..Default::default() }
     }
 }
 
@@ -110,6 +125,10 @@ pub async fn connect(server_addr: &str) -> Result<ConnectedClient, TransportErro
 ///
 /// - `TlsMode::Secure`: Verifies server certificate against system roots.
 /// - `TlsMode::Insecure`: Accepts any certificate (development only).
+///
+/// # Errors
+///
+/// Returns `TransportError::Connection` if the connection times out or fails.
 pub async fn connect_with_config(
     server_addr: &str,
     config: TransportConfig,
@@ -126,10 +145,18 @@ pub async fn connect_with_config(
         .map_err(|e| TransportError::Connection(format!("endpoint creation failed: {e}")))?;
     endpoint.set_default_client_config(client_config);
 
-    let connection = endpoint
+    let connecting = endpoint
         .connect(addr, &config.server_name)
-        .map_err(|e| TransportError::Connection(format!("connect failed: {e}")))?
+        .map_err(|e| TransportError::Connection(format!("connect failed: {e}")))?;
+
+    let connection = tokio::time::timeout(config.connect_timeout, connecting)
         .await
+        .map_err(|_| {
+            TransportError::Connection(format!(
+                "connection timed out after {:?}",
+                config.connect_timeout
+            ))
+        })?
         .map_err(|e| TransportError::Connection(format!("connection failed: {e}")))?;
 
     let (to_server_tx, to_server_rx) = mpsc::channel::<Frame>(32);
@@ -150,7 +177,7 @@ async fn run_connection(
     mut to_server: mpsc::Receiver<Frame>,
     from_server: mpsc::Sender<Frame>,
 ) {
-    // Incoming: Unidirectional streams
+    // Incoming unidirectional streams
     let conn_recv = connection.clone();
     let from_server_clone = from_server.clone();
     let recv_handle = tokio::spawn(async move {
@@ -169,7 +196,7 @@ async fn run_connection(
         }
     });
 
-    // Outgoing: Send frames
+    // Outgoing frames
     while let Some(frame) = to_server.recv().await {
         if let Ok((send, _recv)) = connection.open_bi().await {
             if let Err(e) = send_frame(send, &frame).await {
@@ -242,9 +269,7 @@ fn secure_client_config() -> Result<ClientConfig, TransportError> {
     ));
 
     let mut transport = quinn::TransportConfig::default();
-    transport.max_idle_timeout(Some(
-        std::time::Duration::from_secs(TRANSPORT_IDLE_TIMEOUT).try_into().unwrap(),
-    ));
+    transport.max_idle_timeout(Some(TRANSPORT_IDLE_TIMEOUT.try_into().unwrap()));
     config.transport_config(Arc::new(transport));
 
     Ok(config)
@@ -267,9 +292,7 @@ fn insecure_client_config() -> ClientConfig {
     ));
 
     let mut transport = quinn::TransportConfig::default();
-    transport.max_idle_timeout(Some(
-        std::time::Duration::from_secs(TRANSPORT_IDLE_TIMEOUT).try_into().unwrap(),
-    ));
+    transport.max_idle_timeout(Some(TRANSPORT_IDLE_TIMEOUT.try_into().unwrap()));
     config.transport_config(Arc::new(transport));
 
     config
