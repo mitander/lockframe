@@ -1,0 +1,33 @@
+[package]
+name = "lockframe-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Minimal TUI for protocol verification"
+
+[[bin]]
+name = "lockframe-tui"
+path = "src/main.rs"
+
+[dependencies]
+lockframe-client = { path = "../lockframe-client" }
+lockframe-core = { path = "../lockframe-core" }
+lockframe-proto = { path = "../lockframe-proto" }
+
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Error handling
+thiserror = "2.0"
+
+[dev-dependencies]
+# Snapshot testing
+insta = "1.41"
+
+[lints]
+workspace = true
