@@ -23,6 +23,7 @@
 mod driver;
 mod error;
 mod executor;
+mod key_package_registry;
 mod registry;
 mod room_manager;
 pub mod sequencer;
@@ -37,6 +38,7 @@ use bytes::BytesMut;
 pub use driver::{LogLevel, ServerAction, ServerConfig as DriverConfig, ServerDriver, ServerEvent};
 pub use error::ServerError;
 pub use executor::BroadcastPolicy;
+pub use key_package_registry::{KeyPackageEntry, KeyPackageRegistry};
 use lockframe_proto::{Frame, FrameHeader};
 pub use registry::{ConnectionRegistry, SessionInfo};
 pub use room_manager::{RoomAction, RoomError, RoomManager, RoomMetadata};

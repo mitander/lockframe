@@ -12,10 +12,11 @@ use lockframe_core::{
 };
 use lockframe_proto::{
     Frame, FrameHeader, Opcode, Payload,
-    payloads::{ErrorPayload, session::SyncResponse},
+    payloads::{ErrorPayload, mls::KeyPackageFetchPayload, session::SyncResponse},
 };
 
 use crate::{
+    key_package_registry::{KeyPackageEntry, KeyPackageRegistry, StoreResult},
     registry::{ConnectionRegistry, SessionInfo},
     room_manager::{RoomAction, RoomManager},
     server_error::ServerError,
@@ -152,9 +153,11 @@ where
     /// Connection state machines (session_id → Connection)
     connections: HashMap<u64, Connection>,
     /// Session/room registry
-    registry: ConnectionRegistry,
+    pub(crate) registry: ConnectionRegistry,
     /// Room manager (MLS validation + sequencing)
     room_manager: RoomManager<E>,
+    /// KeyPackage registry for publish/fetch operations
+    key_package_registry: KeyPackageRegistry,
     /// Storage backend
     storage: S,
     /// Environment (time, RNG)
@@ -174,6 +177,7 @@ where
             connections: HashMap::new(),
             registry: ConnectionRegistry::new(),
             room_manager: RoomManager::new(),
+            key_package_registry: KeyPackageRegistry::new(),
             storage,
             env,
             config,
@@ -262,9 +266,13 @@ where
                 }
 
                 if opcode == Some(Opcode::Hello) {
-                    if let Some(info) = self.registry.sessions_mut(session_id) {
-                        info.authenticated = true;
-                        info.user_id = conn.session_id();
+                    if let Some(_) = self.registry.sessions(session_id) {
+                        // TODO: Extract actual user_id from auth_token when authentication is
+                        // implemented For now, use session_id as temporary user_id.
+                        let user_id = session_id;
+
+                        let new_info = SessionInfo::authenticated(user_id);
+                        self.registry.update_session_info(session_id, new_info);
                     }
                 }
             },
@@ -274,23 +282,48 @@ where
                 actions.extend(sync_actions);
             },
 
+            Some(Opcode::KeyPackagePublish) => {
+                conn.update_activity(now);
+                let publish_actions = self.handle_key_package_publish(session_id, &frame);
+                actions.extend(publish_actions);
+            },
+
+            Some(Opcode::KeyPackageFetch) => {
+                conn.update_activity(now);
+                let fetch_actions = self.handle_key_package_fetch(session_id, &frame);
+                actions.extend(fetch_actions);
+            },
+
             Some(Opcode::Welcome) => {
                 let room_id = frame.header.room_id();
+                let recipient_id = frame.header.recipient_id();
                 conn.update_activity(now);
-
-                self.registry.subscribe(session_id, room_id);
-
-                actions.push(ServerAction::Log {
-                    level: LogLevel::Debug,
-                    message: format!(
-                        "session {} subscribed to room {:032x} via Welcome",
-                        session_id, room_id
-                    ),
-                    timestamp: now,
-                });
 
                 let room_actions =
                     self.room_manager.process_frame(frame, &self.env, &self.storage)?;
+
+                if let Some(recipient_session_id) = self.registry.session_id_for_user(recipient_id)
+                {
+                    self.registry.subscribe(recipient_session_id, room_id);
+
+                    actions.push(ServerAction::Log {
+                        level: LogLevel::Debug,
+                        message: format!(
+                            "session {} (user {}) subscribed to room {:032x} via Welcome",
+                            recipient_session_id, recipient_id, room_id
+                        ),
+                        timestamp: now,
+                    });
+                } else {
+                    actions.push(ServerAction::Log {
+                        level: LogLevel::Warn,
+                        message: format!(
+                            "Welcome recipient {} not connected, cannot subscribe to room {:032x}",
+                            recipient_id, room_id
+                        ),
+                        timestamp: now,
+                    });
+                }
 
                 for room_action in room_actions {
                     actions.extend(self.convert_room_action(room_action, session_id));
@@ -388,6 +421,239 @@ where
         }
     }
 
+    /// Handle KeyPackage publish request.
+    fn handle_key_package_publish(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+        let now = self.env.now();
+
+        let user_id = match self.registry.sessions(session_id) {
+            Some(info) => match info.user_id {
+                Some(id) => id,
+                None => {
+                    let error =
+                        Payload::Error(ErrorPayload::frame_rejected("Session not authenticated"));
+                    return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                        Ok(frame) => vec![
+                            ServerAction::SendToSession { session_id, frame },
+                            ServerAction::Log {
+                                level: LogLevel::Warn,
+                                message: format!(
+                                    "KeyPackagePublish from unauthenticated session {}",
+                                    session_id
+                                ),
+                                timestamp: now,
+                            },
+                        ],
+                        Err(e) => vec![ServerAction::Log {
+                            level: LogLevel::Error,
+                            message: format!("failed to encode error response: {}", e),
+                            timestamp: now,
+                        }],
+                    };
+                },
+            },
+            None => {
+                let error = Payload::Error(ErrorPayload::frame_rejected("Unknown session"));
+                return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "KeyPackagePublish from unknown session {}",
+                                session_id
+                            ),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!("failed to encode error response: {}", e),
+                        timestamp: now,
+                    }],
+                };
+            },
+        };
+
+        let payload = match Payload::from_frame(frame.clone()) {
+            Ok(Payload::KeyPackagePublish(req)) => req,
+            Ok(_) => {
+                let error = Payload::Error(ErrorPayload::invalid_payload(
+                    "Expected KeyPackagePublish payload",
+                ));
+                return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "expected KeyPackagePublish payload from session {}",
+                                session_id
+                            ),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!("failed to encode error response: {}", e),
+                        timestamp: now,
+                    }],
+                };
+            },
+            Err(e) => {
+                let error = Payload::Error(ErrorPayload::invalid_payload(&format!(
+                    "Failed to decode KeyPackagePublish: {}",
+                    e
+                )));
+                return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!("failed to decode KeyPackagePublish: {}", e),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!("failed to encode error response: {}", e),
+                        timestamp: now,
+                    }],
+                };
+            },
+        };
+
+        let store_result = self
+            .key_package_registry
+            .store(user_id, KeyPackageEntry::new(payload.key_package_bytes, payload.hash_ref));
+
+        let mut actions = vec![ServerAction::Log {
+            level: LogLevel::Info,
+            message: format!("KeyPackage published for user {}", user_id),
+            timestamp: now,
+        }];
+
+        if store_result == StoreResult::Evicted {
+            actions.push(ServerAction::Log {
+                level: LogLevel::Debug,
+                message: format!("KeyPackage registry evicted an entry for user {}", user_id),
+                timestamp: now,
+            });
+        }
+
+        actions
+    }
+
+    /// Handle KeyPackage fetch request.
+    fn handle_key_package_fetch(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+        let now = self.env.now();
+
+        // Decode request
+        let request = match Payload::from_frame(frame.clone()) {
+            Ok(Payload::KeyPackageFetch(req)) => req,
+            Ok(_) => {
+                let error = Payload::Error(ErrorPayload::invalid_payload(
+                    "Expected KeyPackageFetch payload",
+                ));
+                return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "unexpected payload type in KeyPackageFetch frame from session {}",
+                                session_id
+                            ),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!(
+                            "failed to encode error response for KeyPackageFetch: {}",
+                            e
+                        ),
+                        timestamp: now,
+                    }],
+                };
+            },
+            Err(e) => {
+                let error = Payload::Error(ErrorPayload::invalid_payload(&format!(
+                    "Failed to decode KeyPackageFetch: {}",
+                    e
+                )));
+                return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "failed to decode KeyPackageFetch from session {}: {}",
+                                session_id, e
+                            ),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!(
+                            "failed to encode error response for KeyPackageFetch: {}",
+                            e
+                        ),
+                        timestamp: now,
+                    }],
+                };
+            },
+        };
+
+        // Fetch (and consume) from registry
+        match self.key_package_registry.take(request.user_id) {
+            Some(entry) => {
+                // Build response
+                let response = Payload::KeyPackageFetch(KeyPackageFetchPayload {
+                    user_id: request.user_id,
+                    key_package_bytes: entry.key_package_bytes,
+                    hash_ref: entry.hash_ref,
+                });
+
+                match response.into_frame(FrameHeader::new(Opcode::KeyPackageFetch)) {
+                    Ok(response_frame) => vec![
+                        ServerAction::SendToSession { session_id, frame: response_frame },
+                        ServerAction::Log {
+                            level: LogLevel::Debug,
+                            message: format!("KeyPackage fetched for user {}", request.user_id),
+                            timestamp: now,
+                        },
+                    ],
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!("failed to encode KeyPackageFetch response: {}", e),
+                        timestamp: now,
+                    }],
+                }
+            },
+            None => {
+                // No KeyPackage found - return error
+                let error = Payload::Error(ErrorPayload::keypackage_not_found(request.user_id));
+
+                match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                    Ok(frame) => {
+                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                            level: LogLevel::Debug,
+                            message: format!(
+                                "no KeyPackage found for user {} (requested by session {})",
+                                request.user_id, session_id
+                            ),
+                            timestamp: now,
+                        }]
+                    },
+                    Err(e) => vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!(
+                            "failed to encode error response for KeyPackageFetch: {}",
+                            e
+                        ),
+                        timestamp: now,
+                    }],
+                }
+            },
+        }
+    }
+
     /// Handle a connection being closed.
     fn handle_connection_closed(
         &mut self,
@@ -452,6 +718,23 @@ where
     ) -> Vec<ServerAction> {
         match room_action {
             RoomAction::Broadcast { room_id, frame, exclude_sender, .. } => {
+                if frame.header.opcode_enum() == Some(Opcode::Welcome) {
+                    // Welcome frames are routed to recipients
+                    let recipient_id = frame.header.recipient_id();
+                    if let Some(session_id) = self.registry.session_id_for_user(recipient_id) {
+                        return vec![ServerAction::SendToSession { session_id, frame }];
+                    } else {
+                        return vec![ServerAction::Log {
+                            level: LogLevel::Warn,
+                            message: format!(
+                                "Welcome recipient {} not connected (room {})",
+                                recipient_id, room_id
+                            ),
+                            timestamp: self.env.now(),
+                        }];
+                    }
+                }
+
                 let is_sender = if exclude_sender { Some(sender_session_id) } else { None };
                 vec![ServerAction::BroadcastToRoom { room_id, frame, exclude_session: is_sender }]
             },
@@ -735,10 +1018,18 @@ mod tests {
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
         let room_id = 0x1234_5678_90ab_cdef_1234_5678_90ab_cdef;
+        let user_id_1 = 1001; // Conn 1's user ID (room creator)
+        let user_id_2 = 2002; // Conn 2's user ID (Welcome recipient)
 
         // Accept two connections
         server.process_event(ServerEvent::ConnectionAccepted { session_id: 1 }).unwrap();
         server.process_event(ServerEvent::ConnectionAccepted { session_id: 2 }).unwrap();
+
+        // Complete Hello handshake for both to set their user_ids
+        // Conn 1 handshake
+        server.registry.update_session_info(1, SessionInfo::authenticated(user_id_1));
+        // Conn 2 handshake
+        server.registry.update_session_info(2, SessionInfo::authenticated(user_id_2));
 
         // Conn 1 creates the room
         server.create_room(room_id, 1).unwrap();
@@ -747,18 +1038,22 @@ mod tests {
         let sessions: Vec<_> = server.sessions_in_room(room_id).collect();
         assert_eq!(sessions, vec![1]);
 
-        // Simulate conn 2 receiving a Welcome frame
+        // Conn 1 sends a Welcome frame to add conn 2
+        // The Welcome frame has recipient_id = user_id_2
+        //
         // Note: The Welcome payload doesn't need to be valid MLS for this test
         // because we're testing the subscription logic, not MLS processing.
         // The room_manager.process_frame will fail, but subscription happens first.
         let mut header = FrameHeader::new(Opcode::Welcome);
         header.set_room_id(room_id);
+        header.set_recipient_id(user_id_2);
+        header.set_sender_id(user_id_1);
         let welcome_frame = Frame::new(header, Bytes::from("fake welcome"));
 
-        // Process the Welcome - it will fail MLS validation but subscription should
-        // happen
+        // Process the Welcome from conn 1 - it will fail MLS validation but
+        // subscription should happen first
         let _ = server
-            .process_event(ServerEvent::FrameReceived { session_id: 2, frame: welcome_frame });
+            .process_event(ServerEvent::FrameReceived { session_id: 1, frame: welcome_frame });
 
         // Verify conn 2 is now subscribed (even if MLS processing failed)
         let sessions: Vec<_> = server.sessions_in_room(room_id).collect();
