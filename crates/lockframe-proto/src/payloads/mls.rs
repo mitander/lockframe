@@ -110,6 +110,48 @@ pub struct WelcomeData {
     pub epoch: u64,
 }
 
+/// Publish a KeyPackage to the server registry.
+///
+/// Sent by a client to make their KeyPackage available for others to fetch
+/// when adding them to rooms.
+///
+/// # Protocol Flow
+///
+/// 1. Client generates KeyPackage via `generate_key_package()`
+/// 2. Client sends KeyPackagePublish with serialized KeyPackage
+/// 3. Server stores KeyPackage indexed by sender's user_id
+/// 4. Other clients can fetch this KeyPackage to add this user to rooms
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyPackagePublishRequest {
+    /// Serialized MLS KeyPackage (from openmls/mls-rs).
+    pub key_package_bytes: Vec<u8>,
+    /// KeyPackage hash reference for deduplication.
+    pub hash_ref: Vec<u8>,
+}
+
+/// Fetch a KeyPackage from the server registry.
+///
+/// Request: Client sends with `user_id` populated, `key_package_bytes` empty.
+/// Response: Server sends with `key_package_bytes` populated.
+///
+/// # Protocol Flow
+///
+/// 1. Client A wants to add user B to a room
+/// 2. Client A sends KeyPackageFetch with `user_id = B`
+/// 3. Server looks up B's KeyPackage and returns it
+/// 4. Client A uses the KeyPackage in AddMembers
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyPackageFetchPayload {
+    /// User ID whose KeyPackage to fetch (request) or owner (response).
+    pub user_id: u64,
+    /// Serialized MLS KeyPackage. Empty in request, populated in response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_package_bytes: Vec<u8>,
+    /// KeyPackage hash reference. Empty in request, populated in response.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hash_ref: Vec<u8>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +167,48 @@ mod tests {
 
         let cbor = ciborium::ser::into_writer(&commit, Vec::new());
         assert!(cbor.is_ok());
+    }
+
+    #[test]
+    fn key_package_publish_serde() {
+        let publish = KeyPackagePublishRequest {
+            key_package_bytes: vec![1, 2, 3, 4],
+            hash_ref: vec![5, 6, 7, 8],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::ser::into_writer(&publish, &mut buf).unwrap();
+
+        let decoded: KeyPackagePublishRequest = ciborium::de::from_reader(&buf[..]).unwrap();
+        assert_eq!(publish, decoded);
+    }
+
+    #[test]
+    fn key_package_fetch_serde() {
+        // Request (empty key_package_bytes)
+        let request = KeyPackageFetchPayload {
+            user_id: 42,
+            key_package_bytes: Vec::new(),
+            hash_ref: Vec::new(),
+        };
+
+        let mut buf = Vec::new();
+        ciborium::ser::into_writer(&request, &mut buf).unwrap();
+
+        let decoded: KeyPackageFetchPayload = ciborium::de::from_reader(&buf[..]).unwrap();
+        assert_eq!(request, decoded);
+
+        // Response (populated key_package_bytes)
+        let response = KeyPackageFetchPayload {
+            user_id: 42,
+            key_package_bytes: vec![1, 2, 3, 4],
+            hash_ref: vec![5, 6, 7, 8],
+        };
+
+        let mut buf = Vec::new();
+        ciborium::ser::into_writer(&response, &mut buf).unwrap();
+
+        let decoded: KeyPackageFetchPayload = ciborium::de::from_reader(&buf[..]).unwrap();
+        assert_eq!(response, decoded);
     }
 }

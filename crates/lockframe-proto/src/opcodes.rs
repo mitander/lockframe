@@ -66,6 +66,10 @@ pub enum Opcode {
     ReInit = 0x1006,
     /// Server-generated external commit
     ExternalCommit = 0x1007,
+    /// Publish KeyPackage to registry (client → server)
+    KeyPackagePublish = 0x1008,
+    /// Fetch KeyPackage from registry (client → server, server → client)
+    KeyPackageFetch = 0x1009,
 
     // Application Messages (0x2000-0x2FFF)
     /// Encrypted application message
@@ -162,6 +166,8 @@ impl Opcode {
             0x1005 => Some(Self::PSKProposal),
             0x1006 => Some(Self::ReInit),
             0x1007 => Some(Self::ExternalCommit),
+            0x1008 => Some(Self::KeyPackagePublish),
+            0x1009 => Some(Self::KeyPackageFetch),
 
             0x2000 => Some(Self::AppMessage),
             0x2001 => Some(Self::AppReceipt),

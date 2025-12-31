@@ -78,6 +78,10 @@ pub enum Payload {
     Commit(mls::CommitData),
     /// MLS welcome message
     Welcome(mls::WelcomeData),
+    /// Publish KeyPackage to server registry
+    KeyPackagePublish(mls::KeyPackagePublishRequest),
+    /// Fetch KeyPackage from server registry
+    KeyPackageFetch(mls::KeyPackageFetchPayload),
 
     // Application Messages
     /// Encrypted application message
@@ -125,6 +129,8 @@ impl ErrorPayload {
     pub const MLS_ERROR: u16 = 0x0005;
     /// Sequencer error (e.g., duplicate log index).
     pub const SEQUENCER_ERROR: u16 = 0x0006;
+    /// KeyPackage not found in registry.
+    pub const KEYPACKAGE_NOT_FOUND: u16 = 0x0007;
 
     /// Create a frame rejection error.
     pub fn frame_rejected(reason: impl Into<String>) -> Self {
@@ -159,6 +165,15 @@ impl ErrorPayload {
     pub fn sequencer_error(msg: impl Into<String>) -> Self {
         Self { code: Self::SEQUENCER_ERROR, message: msg.into(), retry_after: None }
     }
+
+    /// Create a KeyPackage not found error.
+    pub fn keypackage_not_found(user_id: u64) -> Self {
+        Self {
+            code: Self::KEYPACKAGE_NOT_FOUND,
+            message: format!("no KeyPackage for user {}", user_id),
+            retry_after: None,
+        }
+    }
 }
 
 impl Payload {
@@ -177,6 +192,8 @@ impl Payload {
             Self::Proposal(_) => Opcode::Proposal,
             Self::Commit(_) => Opcode::Commit,
             Self::Welcome(_) => Opcode::Welcome,
+            Self::KeyPackagePublish(_) => Opcode::KeyPackagePublish,
+            Self::KeyPackageFetch(_) => Opcode::KeyPackageFetch,
             Self::AppMessage(_) => Opcode::AppMessage,
             Self::AppReceipt(_) => Opcode::AppReceipt,
             Self::AppReaction(_) => Opcode::AppReaction,
@@ -220,6 +237,8 @@ impl Payload {
             Self::Proposal(inner) => ciborium::ser::into_writer(inner, &mut writer),
             Self::Commit(inner) => ciborium::ser::into_writer(inner, &mut writer),
             Self::Welcome(inner) => ciborium::ser::into_writer(inner, &mut writer),
+            Self::KeyPackagePublish(inner) => ciborium::ser::into_writer(inner, &mut writer),
+            Self::KeyPackageFetch(inner) => ciborium::ser::into_writer(inner, &mut writer),
             Self::AppMessage(inner) => ciborium::ser::into_writer(inner, &mut writer),
             Self::AppReceipt(inner) => ciborium::ser::into_writer(inner, &mut writer),
             Self::AppReaction(inner) => ciborium::ser::into_writer(inner, &mut writer),
@@ -295,6 +314,14 @@ impl Payload {
                     .map_err(|e| ProtocolError::CborDecode(e.to_string()))?,
             ),
             Opcode::Welcome => Self::Welcome(
+                ciborium::de::from_reader(bytes)
+                    .map_err(|e| ProtocolError::CborDecode(e.to_string()))?,
+            ),
+            Opcode::KeyPackagePublish => Self::KeyPackagePublish(
+                ciborium::de::from_reader(bytes)
+                    .map_err(|e| ProtocolError::CborDecode(e.to_string()))?,
+            ),
+            Opcode::KeyPackageFetch => Self::KeyPackageFetch(
                 ciborium::de::from_reader(bytes)
                     .map_err(|e| ProtocolError::CborDecode(e.to_string()))?,
             ),
