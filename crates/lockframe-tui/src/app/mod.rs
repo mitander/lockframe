@@ -40,6 +40,8 @@ pub struct App {
     input_cursor: usize,
     /// Terminal dimensions (columns, rows).
     terminal_size: (u16, u16),
+    /// Status message to display.
+    status_message: Option<String>,
 }
 
 impl App {
@@ -53,6 +55,7 @@ impl App {
             input_buffer: String::new(),
             input_cursor: 0,
             terminal_size: (80, 24),
+            status_message: None,
         }
     }
 
@@ -78,6 +81,7 @@ impl App {
                 if self.active_room.is_none() {
                     self.active_room = Some(room_id);
                 }
+                self.status_message = Some(format!("Joined room {room_id}"));
                 vec![AppAction::Render]
             },
             AppEvent::RoomLeft { room_id } => {
@@ -100,6 +104,7 @@ impl App {
                 if let Some(room) = self.rooms.get_mut(&room_id) {
                     room.members.insert(member_id);
                 }
+                self.status_message = Some(format!("Added member {member_id} to room"));
                 vec![AppAction::Render]
             },
             AppEvent::MemberRemoved { room_id, member_id } => {
@@ -109,8 +114,7 @@ impl App {
                 vec![AppAction::Render]
             },
             AppEvent::Error { message } => {
-                // TODO: Display error in status bar
-                let _ = message;
+                self.status_message = Some(format!("Error: {}", message));
                 vec![AppAction::Render]
             },
         }
@@ -206,8 +210,10 @@ impl App {
             "create" => {
                 if let Some(room_id_str) = parts.get(1) {
                     if let Ok(room_id) = room_id_str.parse::<u128>() {
+                        self.status_message = Some(format!("Creating room {room_id}..."));
                         return vec![AppAction::CreateRoom { room_id }, AppAction::Render];
                     }
+                    self.status_message = Some("Error: Invalid room ID".into());
                 }
                 vec![AppAction::Render]
             },
@@ -225,10 +231,20 @@ impl App {
             ),
             "publish" => vec![AppAction::PublishKeyPackage, AppAction::Render],
             "add" => {
+                if self.active_room.is_none() {
+                    self.status_message = Some("Error: No active room. Use /create first".into());
+                    return vec![AppAction::Render];
+                }
+                if parts.get(1).is_none() {
+                    self.status_message = Some("Usage: /add <user_id>".into());
+                    return vec![AppAction::Render];
+                }
                 if let (Some(room_id), Some(user_id_str)) = (self.active_room, parts.get(1)) {
                     if let Ok(user_id) = user_id_str.parse::<u64>() {
+                        self.status_message = Some(format!("Adding user {user_id} to room..."));
                         return vec![AppAction::AddMember { room_id, user_id }, AppAction::Render];
                     }
+                    self.status_message = Some("Error: Invalid user ID".into());
                 }
                 vec![AppAction::Render]
             },
@@ -307,6 +323,11 @@ impl App {
     /// Terminal dimensions (columns, rows).
     pub fn terminal_size(&self) -> (u16, u16) {
         self.terminal_size
+    }
+
+    /// Status message to display. `None` if no message.
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
     }
 }
 

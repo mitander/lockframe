@@ -21,8 +21,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         ConnectionState::Connecting => {
             Span::styled("Connecting...", Style::default().fg(Color::Yellow))
         },
-        ConnectionState::Connected { session_id } => Span::styled(
-            format!("Connected ({session_id})"),
+        ConnectionState::Connected { sender_id, .. } => Span::styled(
+            format!("Connected | Your ID: {sender_id}"),
             Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
         ),
     };
@@ -35,10 +35,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         format!(" | Room: #{room_short:04x} | Members: {member_count} | Messages: {msg_count}")
     });
 
+    let status_msg = app.status_message().map_or_else(String::new, |msg| format!(" | {msg}"));
+
     let status_line = Line::from(vec![
         Span::raw(" "),
         connection_status,
         Span::styled(room_info, Style::default().fg(Color::DarkGray)),
+        Span::styled(status_msg, Style::default().fg(Color::Red)),
     ]);
 
     let paragraph =
