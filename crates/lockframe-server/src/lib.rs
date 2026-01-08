@@ -22,7 +22,6 @@
 
 mod driver;
 mod error;
-mod executor;
 mod key_package_registry;
 mod registry;
 mod room_manager;
@@ -37,7 +36,6 @@ use std::{collections::HashMap, sync::Arc};
 use bytes::BytesMut;
 pub use driver::{LogLevel, ServerAction, ServerConfig as DriverConfig, ServerDriver, ServerEvent};
 pub use error::ServerError;
-pub use executor::BroadcastPolicy;
 pub use key_package_registry::{KeyPackageEntry, KeyPackageRegistry};
 use lockframe_core::env::Environment;
 use lockframe_proto::{Frame, FrameHeader};
