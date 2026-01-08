@@ -39,6 +39,7 @@ pub use driver::{LogLevel, ServerAction, ServerConfig as DriverConfig, ServerDri
 pub use error::ServerError;
 pub use executor::BroadcastPolicy;
 pub use key_package_registry::{KeyPackageEntry, KeyPackageRegistry};
+use lockframe_core::env::Environment;
 use lockframe_proto::{Frame, FrameHeader};
 pub use registry::{ConnectionRegistry, SessionInfo};
 pub use room_manager::{RoomAction, RoomError, RoomManager, RoomMetadata};
@@ -155,11 +156,11 @@ async fn handle_connection(
     conn: QuinnConnection,
     driver: Arc<tokio::sync::Mutex<ServerDriver<SystemEnv, MemoryStorage>>>,
     shared: Arc<SharedState>,
-    _env: SystemEnv,
+    env: SystemEnv,
 ) -> Result<(), ServerError> {
     let session_id = {
         let mut buf = [0u8; 8];
-        getrandom::fill(&mut buf).map_err(|e| ServerError::Internal(e.to_string()))?;
+        env.random_bytes(&mut buf);
         u64::from_le_bytes(buf)
     };
 
