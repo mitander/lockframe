@@ -143,8 +143,9 @@ pub async fn connect_with_config(
         TlsMode::Secure => secure_client_config()?,
         TlsMode::Insecure => insecure_client_config(),
     };
-    let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap())
-        .map_err(|e| TransportError::Connection(format!("endpoint creation failed: {e}")))?;
+    let mut endpoint =
+        Endpoint::client("0.0.0.0:0".parse().expect("invariant: literal socket address is valid"))
+            .map_err(|e| TransportError::Connection(format!("endpoint creation failed: {e}")))?;
     endpoint.set_default_client_config(client_config);
 
     let connecting = endpoint
@@ -288,7 +289,11 @@ fn secure_client_config() -> Result<ClientConfig, TransportError> {
     ));
 
     let mut transport = quinn::TransportConfig::default();
-    transport.max_idle_timeout(Some(TRANSPORT_IDLE_TIMEOUT.try_into().unwrap()));
+    transport.max_idle_timeout(Some(
+        TRANSPORT_IDLE_TIMEOUT
+            .try_into()
+            .expect("invariant: 30s timeout within IdleTimeout bounds"),
+    ));
     config.transport_config(Arc::new(transport));
 
     Ok(config)
@@ -311,7 +316,11 @@ fn insecure_client_config() -> ClientConfig {
     ));
 
     let mut transport = quinn::TransportConfig::default();
-    transport.max_idle_timeout(Some(TRANSPORT_IDLE_TIMEOUT.try_into().unwrap()));
+    transport.max_idle_timeout(Some(
+        TRANSPORT_IDLE_TIMEOUT
+            .try_into()
+            .expect("invariant: 30s timeout within IdleTimeout bounds"),
+    ));
     config.transport_config(Arc::new(transport));
 
     config
