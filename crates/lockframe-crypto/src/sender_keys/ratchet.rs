@@ -8,6 +8,7 @@
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 use super::error::SenderKeyError;
 
@@ -50,8 +51,7 @@ impl MessageKey {
 // Implement Drop to zeroize key material
 impl Drop for MessageKey {
     fn drop(&mut self) {
-        // Zeroize the key material
-        self.key.iter_mut().for_each(|b| *b = 0);
+        self.key.zeroize();
     }
 }
 
@@ -108,7 +108,7 @@ impl SymmetricRatchet {
         let next_chain_key = self.derive_next_chain_key();
 
         // Zeroize and replace the old chain key for forward secrecy
-        self.chain_key.iter_mut().for_each(|b| *b = 0);
+        self.chain_key.zeroize();
         self.chain_key = next_chain_key;
 
         let current_gen = self.generation;
@@ -182,8 +182,7 @@ impl SymmetricRatchet {
 
 impl Drop for SymmetricRatchet {
     fn drop(&mut self) {
-        // Zeroize chain key
-        self.chain_key.iter_mut().for_each(|b| *b = 0);
+        self.chain_key.zeroize();
     }
 }
 
