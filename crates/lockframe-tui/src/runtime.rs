@@ -135,6 +135,7 @@ impl Runtime {
     /// Run the main event loop.
     pub async fn run(mut self) -> Result<(), RuntimeError> {
         self.render()?;
+        self.connect().await?;
 
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(std::time::Duration::from_millis(100));
