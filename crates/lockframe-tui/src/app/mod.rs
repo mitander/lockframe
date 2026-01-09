@@ -77,11 +77,14 @@ impl App {
                 vec![AppAction::Render]
             },
             AppEvent::RoomJoined { room_id } => {
-                self.rooms.insert(room_id, RoomState::new(room_id));
+                let is_new = !self.rooms.contains_key(&room_id);
+                self.rooms.entry(room_id).or_insert_with(|| RoomState::new(room_id));
                 if self.active_room.is_none() {
                     self.active_room = Some(room_id);
                 }
-                self.status_message = Some(format!("Joined room {room_id}"));
+                if is_new {
+                    self.status_message = Some(format!("Joined room {room_id}"));
+                }
                 vec![AppAction::Render]
             },
             AppEvent::RoomLeft { room_id } => {
@@ -416,5 +419,30 @@ mod tests {
 
         assert!(app.rooms.get(&2).is_some_and(|r| r.unread));
         assert!(app.rooms.get(&1).is_some_and(|r| !r.unread));
+    }
+
+    #[test]
+    fn room_joined_on_existing_room_preserves_messages() {
+        let mut app = new_connected_app();
+
+        // Join room and add a message
+        let _ = app.handle(AppEvent::RoomJoined { room_id: 1 });
+        let _ = app.handle(AppEvent::MessageReceived {
+            room_id: 1,
+            sender_id: 42,
+            content: b"hello".to_vec(),
+        });
+
+        assert_eq!(app.rooms.get(&1).map(|r| r.messages.len()), Some(1));
+
+        // RoomJoined again (e.g., from epoch update after /add) should NOT clear
+        // messages
+        let _ = app.handle(AppEvent::RoomJoined { room_id: 1 });
+
+        assert_eq!(
+            app.rooms.get(&1).map(|r| r.messages.len()),
+            Some(1),
+            "RoomJoined on existing room should not clear message history"
+        );
     }
 }
