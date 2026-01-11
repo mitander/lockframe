@@ -9,12 +9,11 @@ mod input;
 mod rooms;
 mod status;
 
+use lockframe_app::App;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
 };
-
-use crate::App;
 
 /// Render the entire UI.
 pub fn render(frame: &mut Frame, app: &App) {

@@ -11,6 +11,7 @@ name = "lockframe-tui"
 path = "src/main.rs"
 
 [dependencies]
+lockframe-app = { path = "../lockframe-app" }
 lockframe-client = { path = "../lockframe-client", features = ["transport"] }
 lockframe-core = { path = "../lockframe-core" }
 lockframe-proto = { path = "../lockframe-proto" }

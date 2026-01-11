@@ -2,6 +2,7 @@
 //!
 //! Displays the list of joined rooms with unread indicators.
 
+use lockframe_app::App;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,8 +10,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem},
 };
-
-use crate::App;
 
 const ACTIVE_PREFIX: &str = ">";
 const INACTIVE_PREFIX: &str = " ";

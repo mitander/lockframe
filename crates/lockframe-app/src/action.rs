@@ -1,6 +1,7 @@
-//! UI actions
+//! Application side-effects and intents.
 //!
-//! Actions produced by the App state machine for the runtime to execute.
+//! This module defines the [`AppAction`] enum, which represents instructions
+//! produced by the [`crate::App`] state machine for the runtime to execute.
 
 use lockframe_core::mls::RoomId;
 
@@ -21,36 +22,36 @@ pub enum AppAction {
 
     /// Create a new room.
     CreateRoom {
-        /// Room UUID.
+        /// 128-bit room UUID.
         room_id: RoomId,
     },
 
-    /// Join an existing room.
+    /// Join an existing room via external commit.
     JoinRoom {
-        /// Room UUID.
+        /// 128-bit room UUID.
         room_id: RoomId,
     },
 
     /// Leave a room.
     LeaveRoom {
-        /// Room UUID.
+        /// 128-bit room UUID.
         room_id: RoomId,
     },
 
-    /// Send a message to a room.
+    /// Send a message.
     SendMessage {
-        /// Room UUID.
+        /// 128-bit room UUID.
         room_id: RoomId,
-        /// Message payload.
+        /// Message content bytes.
         content: Vec<u8>,
     },
 
-    /// Publish our KeyPackage to the server registry.
+    /// Publish KeyPackage to server.
     PublishKeyPackage,
 
-    /// Add a member to a room by fetching their KeyPackage.
+    /// Add member by fetching their KeyPackage.
     AddMember {
-        /// Room UUID.
+        /// 128-bit room UUID.
         room_id: RoomId,
         /// User ID to add.
         user_id: u64,

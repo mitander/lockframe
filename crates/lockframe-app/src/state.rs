@@ -1,6 +1,11 @@
-//! UI state types
+//! Observable application state types.
 //!
-//! State structures used by the App state machine.
+//! This module defines the data structures that represent the applications
+//! current view of the world, such as [`RoomState`] and [`ConnectionState`].
+//!
+//! These structures serve as the "View Model" for the application. They contain
+//! the subset of protocol state necessary for rendering the UI without exposing
+//! the cryptographic complexities of the underlying client.
 
 use std::collections::HashSet;
 
@@ -9,17 +14,15 @@ use lockframe_core::mls::RoomId;
 /// Connection state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionState {
-    /// Not connected to any server.
+    /// Not connected to server.
     Disconnected,
-
     /// Connection in progress.
     Connecting,
-
-    /// Connected with session ID.
+    /// Connected with established session.
     Connected {
         /// Application-layer session ID.
         session_id: u64,
-        /// Client's sender ID (shareable identity for /add).
+        /// Client's sender ID.
         sender_id: u64,
     },
 }
@@ -27,23 +30,23 @@ pub enum ConnectionState {
 /// Per-room state.
 #[derive(Debug, Clone)]
 pub struct RoomState {
-    /// Room UUID.
+    /// 128-bit room UUID.
     pub room_id: RoomId,
-    /// Messages in this room (ordered by receipt).
+    /// Messages in this room.
     pub messages: Vec<Message>,
-    /// Current room members.
+    /// Member IDs in this room.
     pub members: HashSet<u64>,
-    /// Unread messages indicator.
+    /// Room has unread messages.
     pub unread: bool,
 }
 
 impl RoomState {
-    /// Create a new empty room state.
+    /// Create empty room state.
     pub fn new(room_id: RoomId) -> Self {
         Self { room_id, messages: Vec::new(), members: HashSet::new(), unread: false }
     }
 
-    /// Add a message to the room.
+    /// Add a message to this room.
     pub fn add_message(&mut self, sender_id: u64, content: Vec<u8>) {
         self.messages.push(Message { sender_id, content });
     }
@@ -52,14 +55,14 @@ impl RoomState {
 /// A message in a room.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    /// Sender's stable identifier.
+    /// ID of the sender.
     pub sender_id: u64,
-    /// Message payload.
+    /// Message content bytes.
     pub content: Vec<u8>,
 }
 
 impl Message {
-    /// Message content as UTF-8 string. Returns lossy conversion if invalid.
+    /// Message content as UTF-8 string (lossy conversion).
     pub fn content_str(&self) -> std::borrow::Cow<'_, str> {
         String::from_utf8_lossy(&self.content)
     }

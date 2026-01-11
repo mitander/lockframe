@@ -2,6 +2,7 @@
 //!
 //! Displays messages in the active room.
 
+use lockframe_app::App;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,8 +10,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem},
 };
-
-use crate::App;
 
 const BORDER_SIZE: u16 = 2;
 

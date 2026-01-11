@@ -1653,6 +1653,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockframe-app"
+version = "0.1.0"
+dependencies = [
+ "lockframe-client",
+ "lockframe-core",
+ "lockframe-proto",
+ "proptest",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lockframe-client"
 version = "0.1.0"
 dependencies = [
@@ -1716,6 +1728,7 @@ dependencies = [
  "arbitrary",
  "async-trait",
  "bytes",
+ "lockframe-app",
  "lockframe-client",
  "lockframe-core",
  "lockframe-proto",
@@ -1776,6 +1789,7 @@ dependencies = [
  "crossterm",
  "futures",
  "insta",
+ "lockframe-app",
  "lockframe-client",
  "lockframe-core",
  "lockframe-proto",

@@ -2,14 +2,13 @@
 //!
 //! Displays the input buffer with cursor.
 
+use lockframe_app::App;
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
 };
-
-use crate::App;
 
 const PROMPT_WIDTH: u16 = 3; // "> "
 const INPUT_LINE_OFFSET_Y: u16 = 1; // inside top border

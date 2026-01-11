@@ -2,6 +2,7 @@
 //!
 //! Displays connection status and room information.
 
+use lockframe_app::{App, ConnectionState};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,8 +10,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-
-use crate::{App, app::ConnectionState};
 
 /// Render the status bar.
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {

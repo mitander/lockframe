@@ -6,6 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+lockframe-app = { path = "../lockframe-app" }
+lockframe-client = { path = "../lockframe-client" }
 lockframe-core = { path = "../lockframe-core" }
 lockframe-proto = { path = "../lockframe-proto" }
 lockframe-server = { path = "../lockframe-server" }

@@ -1,7 +1,10 @@
 //! Lockframe TUI entry point.
 
 use clap::Parser;
-use lockframe_tui::runtime::Runtime;
+use lockframe_app::Runtime;
+use lockframe_core::env::Environment;
+use lockframe_server::SystemEnv;
+use lockframe_tui::TerminalDriver;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Lockframe terminal UI client
@@ -10,11 +13,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[command(about = "Terminal UI for the Lockframe messaging protocol")]
 #[command(version)]
 struct Args {
-    /// Server address to connect to (enables QUIC mode)
-    ///
-    /// If not provided, runs in simulation mode with an in-process server.
-    #[arg(short, long)]
-    server: Option<String>,
+    /// Server address to connect to
+    #[arg(short, long, default_value = "localhost:4433")]
+    server: String,
 }
 
 #[tokio::main]
@@ -27,11 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
-
-    let runtime = match args.server {
-        Some(addr) => Runtime::with_quic_server(addr)?,
-        None => Runtime::new()?,
-    };
+    let env = SystemEnv::new();
+    let sender_id = Environment::random_u64(&env);
+    let driver = TerminalDriver::new(args.server.clone())?;
+    let runtime = Runtime::new(driver, env, sender_id, args.server);
 
     Ok(runtime.run().await?)
 }
