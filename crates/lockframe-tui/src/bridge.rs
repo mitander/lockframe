@@ -66,9 +66,9 @@ impl<E: Environment> Bridge<E> {
                 self.handle_client_result(result)
             },
 
-            AppAction::JoinRoom { room_id: _ } => {
-                // TODO: implement Welcome message for JoinRoom action
-                vec![AppEvent::Error { message: "JoinRoom not yet supported".to_string() }]
+            AppAction::JoinRoom { room_id } => {
+                let result = self.client.handle(ClientEvent::ExternalJoin { room_id });
+                self.handle_client_result(result)
             },
 
             AppAction::PublishKeyPackage => {
@@ -182,6 +182,11 @@ impl<E: Environment> Bridge<E> {
                             });
                         },
                     }
+                },
+
+                ClientAction::RoomJoined { room_id, epoch } => {
+                    tracing::info!(%room_id, %epoch, "Joined room via external commit");
+                    events.push(AppEvent::RoomJoined { room_id });
                 },
             }
         }

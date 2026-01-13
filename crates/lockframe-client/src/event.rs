@@ -86,6 +86,17 @@ pub enum ClientEvent {
         /// User ID whose KeyPackage to fetch.
         user_id: u64,
     },
+
+    /// Application wants to join a room via external commit.
+    ///
+    /// This initiates an external join flow where the client:
+    /// 1. Requests GroupInfo from the server
+    /// 2. Creates an external commit using the GroupInfo
+    /// 3. Sends the external commit to the server
+    ExternalJoin {
+        /// Room to join.
+        room_id: RoomId,
+    },
 }
 
 /// Serializable snapshot of room state for persistence.
@@ -175,5 +186,15 @@ pub enum ClientAction {
     KeyPackageNeeded {
         /// Reason the KeyPackage is needed.
         reason: String,
+    },
+
+    /// Successfully joined a room.
+    ///
+    /// Emitted after completing an external join or welcome-based join.
+    RoomJoined {
+        /// Room that was joined.
+        room_id: RoomId,
+        /// Epoch we joined at.
+        epoch: u64,
     },
 }

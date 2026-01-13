@@ -4,7 +4,7 @@
 //! memberships and orchestrates MLS operations with sender key encryption.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -17,7 +17,7 @@ use lockframe_proto::{
     Frame, FrameHeader, Opcode, Payload,
     payloads::{
         app::EncryptedMessage,
-        mls::{KeyPackageFetchPayload, KeyPackagePublishRequest},
+        mls::{GroupInfoPayload, KeyPackageFetchPayload, KeyPackagePublishRequest},
         session::SyncResponse,
     },
 };
@@ -95,6 +95,9 @@ pub struct Client<E: Environment> {
     /// Pending add member operations.
     /// Maps (room_id, user_id) to timestamp for completing the add.
     pending_adds: HashMap<(RoomId, u64), Instant>,
+
+    /// Pending external joins awaiting GroupInfo responses.
+    pending_external_joins: HashSet<RoomId>,
 }
 
 impl<E: Environment> Client<E> {
@@ -106,6 +109,7 @@ impl<E: Environment> Client<E> {
             rooms: HashMap::new(),
             pending_joins: HashMap::new(),
             pending_adds: HashMap::new(),
+            pending_external_joins: HashSet::new(),
         }
     }
 
@@ -167,6 +171,7 @@ impl<E: Environment> Client<E> {
             ClientEvent::FetchAndAddMember { room_id, user_id } => {
                 self.handle_fetch_and_add_member(room_id, user_id)
             },
+            ClientEvent::ExternalJoin { room_id } => self.handle_external_join(room_id),
         }
     }
 
@@ -271,6 +276,7 @@ impl<E: Environment> Client<E> {
             Opcode::Welcome => self.handle_welcome(room_id, frame),
             Opcode::SyncResponse => self.handle_sync_response(room_id, frame),
             Opcode::KeyPackageFetch => self.handle_key_package_fetch_response(frame),
+            Opcode::GroupInfo => self.handle_group_info_response(frame),
             _ => {
                 let room =
                     self.rooms.get_mut(&room_id).ok_or(ClientError::RoomNotFound { room_id })?;
@@ -785,6 +791,84 @@ impl<E: Environment> Client<E> {
         Ok(actions)
     }
 
+    /// Handle external join request.
+    ///
+    /// Sends a GroupInfoRequest to the server. When the response arrives,
+    /// creates an external commit to join the room.
+    fn handle_external_join(&mut self, room_id: RoomId) -> Result<Vec<ClientAction>, ClientError> {
+        if self.rooms.contains_key(&room_id) {
+            return Err(ClientError::RoomAlreadyExists { room_id });
+        }
+
+        self.pending_external_joins.insert(room_id);
+
+        let payload = lockframe_proto::payloads::mls::GroupInfoRequest { room_id };
+
+        let frame = Payload::GroupInfoRequest(payload)
+            .into_frame(FrameHeader::new(Opcode::GroupInfoRequest))
+            .map_err(|e| ClientError::InvalidFrame { reason: e.to_string() })?;
+
+        Ok(vec![ClientAction::Send(frame), ClientAction::Log {
+            message: format!("Requesting GroupInfo to join room {:032x}", room_id),
+        }])
+    }
+
+    /// Handle GroupInfo response.
+    ///
+    /// Completes a pending external join by creating an external commit.
+    fn handle_group_info_response(
+        &mut self,
+        frame: Frame,
+    ) -> Result<Vec<ClientAction>, ClientError> {
+        let payload: GroupInfoPayload =
+            ciborium::de::from_reader(&frame.payload[..]).map_err(|e| {
+                ClientError::InvalidFrame {
+                    reason: format!("Failed to decode GroupInfo response: {e}"),
+                }
+            })?;
+
+        let room_id = payload.room_id;
+
+        if !self.pending_external_joins.remove(&room_id) {
+            return Err(ClientError::InvalidFrame {
+                reason: format!("No pending external join for room {:032x}", room_id),
+            });
+        }
+
+        let member_id = self.identity.sender_id;
+
+        let (mls_group, mls_actions) = MlsGroup::join_from_external(
+            self.env.clone(),
+            room_id,
+            member_id,
+            &payload.group_info_bytes,
+        )
+        .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
+
+        let sender_keys = self.initialize_sender_keys(&mls_group)?;
+        let my_leaf_index = mls_group.own_leaf_index();
+        let epoch = mls_group.epoch();
+
+        let initial_state =
+            mls_group.export_state().map_err(|e| ClientError::Mls { reason: e.to_string() })?;
+
+        let room_state = RoomState { mls_group, sender_keys, my_leaf_index };
+        self.rooms.insert(room_id, room_state);
+
+        let mut actions = self.convert_mls_actions(room_id, mls_actions);
+
+        actions.push(ClientAction::PersistRoom(RoomStateSnapshot {
+            room_id,
+            epoch,
+            mls_state: initial_state,
+            my_leaf_index,
+        }));
+
+        actions.push(ClientAction::RoomJoined { room_id, epoch });
+
+        Ok(actions)
+    }
+
     /// Handle tick (timeout processing).
     ///
     /// Checks all rooms for pending commits that have timed out.
@@ -870,6 +954,19 @@ impl<E: Environment> Client<E> {
                 },
                 MlsAction::RemoveGroup { reason } => {
                     Some(ClientAction::RoomRemoved { room_id, reason })
+                },
+                MlsAction::PublishGroupInfo { room_id: info_room_id, epoch, group_info_bytes } => {
+                    let payload =
+                        GroupInfoPayload { room_id: info_room_id, epoch, group_info_bytes };
+
+                    match Payload::GroupInfo(payload)
+                        .into_frame(FrameHeader::new(Opcode::GroupInfo))
+                    {
+                        Ok(frame) => Some(ClientAction::Send(frame)),
+                        Err(e) => Some(ClientAction::Log {
+                            message: format!("Failed to create GroupInfo frame: {:?}", e),
+                        }),
+                    }
                 },
                 MlsAction::Log { message } => Some(ClientAction::Log { message }),
             })
