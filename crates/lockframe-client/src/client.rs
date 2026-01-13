@@ -235,7 +235,7 @@ impl<E: Environment> Client<E> {
         let crypto_encrypted =
             room.sender_keys.encrypt(room.my_leaf_index, plaintext, random_bytes)?;
 
-        let encrypted = crypto_to_proto_encrypted(&crypto_encrypted);
+        let encrypted = crypto_to_proto_encrypted(&crypto_encrypted, Some(plaintext.to_vec()));
         let payload = serialize_encrypted_message(&encrypted);
 
         let payload_len: u32 = payload
@@ -309,19 +309,7 @@ impl<E: Environment> Client<E> {
         let room_epoch = room.mls_group.epoch();
 
         if frame_epoch != room_epoch {
-            return Ok(vec![
-                ClientAction::Log {
-                    message: format!(
-                        "Epoch mismatch for room {:x}: frame {}, room {}. Requesting sync.",
-                        room_id, frame_epoch, room_epoch
-                    ),
-                },
-                ClientAction::RequestSync {
-                    room_id,
-                    from_epoch: room_epoch,
-                    to_epoch: frame_epoch,
-                },
-            ]);
+            return self.handle_epoch_mismatch(frame, frame_epoch, room_epoch, room_id);
         }
 
         let validation_state = room.mls_group.export_validation_state();
@@ -365,6 +353,51 @@ impl<E: Environment> Client<E> {
             log_index: frame.header.log_index(),
             timestamp: frame.header.hlc_timestamp(),
         }])
+    }
+
+    fn handle_epoch_mismatch(
+        &self,
+        frame: Frame,
+        frame_epoch: u64,
+        room_epoch: u64,
+        room_id: RoomId,
+    ) -> Result<Vec<ClientAction>, ClientError> {
+        if frame_epoch < room_epoch {
+            // We can't decrypt older epochs because we don't have the keys.
+            let proto_encrypted = deserialize_encrypted_message(&frame.payload)
+                .map_err(|e| ClientError::InvalidFrame { reason: e })?;
+
+            if let Some(plaintext) = proto_encrypted.server_plaintext {
+                return Ok(vec![ClientAction::DeliverMessage {
+                    room_id,
+                    sender_id: frame.header.sender_id(),
+                    plaintext,
+                    log_index: frame.header.log_index(),
+                    timestamp: frame.header.hlc_timestamp(),
+                }]);
+            }
+
+            return Ok(vec![ClientAction::Log {
+                message: format!(
+                    "Skipping message from old epoch {} (current: {}) in room {:x} - no plaintext available",
+                    frame_epoch, room_epoch, room_id
+                ),
+            }]);
+        } else {
+            return Ok(vec![
+                ClientAction::Log {
+                    message: format!(
+                        "Epoch mismatch for room {:x}: frame {}, room {}. Requesting sync.",
+                        room_id, frame_epoch, room_epoch
+                    ),
+                },
+                ClientAction::RequestSync {
+                    room_id,
+                    from_epoch: room_epoch,
+                    to_epoch: frame_epoch,
+                },
+            ]);
+        }
     }
 
     /// Handle MLS commit (epoch transition).
@@ -989,7 +1022,10 @@ impl<E: Environment> Client<E> {
     }
 }
 
-fn crypto_to_proto_encrypted(crypto: &CryptoEncryptedMessage) -> EncryptedMessage {
+fn crypto_to_proto_encrypted(
+    crypto: &CryptoEncryptedMessage,
+    plaintext: Option<Vec<u8>>,
+) -> EncryptedMessage {
     EncryptedMessage {
         epoch: crypto.epoch,
         sender_index: crypto.sender_index,
@@ -997,6 +1033,7 @@ fn crypto_to_proto_encrypted(crypto: &CryptoEncryptedMessage) -> EncryptedMessag
         nonce: crypto.nonce,
         ciphertext: crypto.ciphertext.clone(),
         push_keys: None, // Not implemented yet
+        server_plaintext: plaintext,
     }
 }
 

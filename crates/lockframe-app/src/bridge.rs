@@ -149,11 +149,12 @@ where
                 },
                 ClientAction::RequestSync { from_epoch, .. } => {
                     let payload = SyncRequest { from_log_index: from_epoch, limit: 100 };
-                    if let Ok(frame) = Payload::SyncRequest(payload)
+                    Payload::SyncRequest(payload)
                         .into_frame(FrameHeader::new(Opcode::SyncRequest))
-                    {
-                        self.outgoing.push(frame);
-                    }
+                        .ok()
+                        .map(|frame| {
+                            self.outgoing.push(frame);
+                        });
                 },
                 ClientAction::Log { .. } => {},
                 ClientAction::MemberAdded { room_id, user_id } => {
@@ -162,13 +163,22 @@ where
                 ClientAction::KeyPackagePublished => {},
                 ClientAction::KeyPackageNeeded { reason } => {
                     tracing::warn!(%reason, "KeyPackage needed, auto-republishing");
-                    if let Ok(actions) = self.client.handle(ClientEvent::PublishKeyPackage) {
-                        let republish_events = self.process_client_actions(actions);
-                        events.extend(republish_events);
-                    }
+                    self.client
+                        .handle(ClientEvent::PublishKeyPackage)
+                        .ok()
+                        .map(|actions| events.extend(self.process_client_actions(actions)));
                 },
                 ClientAction::RoomJoined { room_id, .. } => {
                     events.push(AppEvent::RoomJoined { room_id });
+                    let payload = SyncRequest { from_log_index: 0, limit: 1000 };
+
+                    Payload::SyncRequest(payload)
+                        .into_frame(FrameHeader::new(Opcode::SyncRequest))
+                        .ok()
+                        .map(|mut frame| {
+                            frame.header.set_room_id(room_id);
+                            self.outgoing.push(frame);
+                        });
                 },
             }
         }

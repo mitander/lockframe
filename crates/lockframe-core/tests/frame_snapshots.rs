@@ -23,10 +23,6 @@ fn frame_to_hex(frame: &Frame) -> String {
     hex::encode(&buf)
 }
 
-// =============================================================================
-// Session Management Frames
-// =============================================================================
-
 #[test]
 fn snapshot_hello_frame() {
     let hello = Payload::Hello(Hello {
@@ -129,10 +125,6 @@ fn snapshot_pong_frame() {
     assert_snapshot!(frame_to_hex(&frame));
 }
 
-// =============================================================================
-// Application Message Frames
-// =============================================================================
-
 #[test]
 fn snapshot_encrypted_message_frame() {
     let msg = Payload::AppMessage(EncryptedMessage {
@@ -142,6 +134,7 @@ fn snapshot_encrypted_message_frame() {
         nonce: [0x02; 24],
         ciphertext: vec![0xca, 0xfe, 0xba, 0xbe],
         push_keys: None,
+        server_plaintext: None,
     });
 
     let frame = msg
@@ -180,10 +173,6 @@ fn snapshot_reaction_frame() {
 
     assert_snapshot!(frame_to_hex(&frame));
 }
-
-// =============================================================================
-// MLS Operation Frames
-// =============================================================================
 
 #[test]
 fn snapshot_key_package_frame() {
@@ -236,10 +225,6 @@ fn snapshot_welcome_frame() {
 
     assert_snapshot!(frame_to_hex(&frame));
 }
-
-// =============================================================================
-// Moderation Frames
-// =============================================================================
 
 #[test]
 fn snapshot_redact_frame() {
@@ -298,10 +283,6 @@ fn snapshot_kick_frame() {
 
     assert_snapshot!(frame_to_hex(&frame));
 }
-
-// =============================================================================
-// Error Frames
-// =============================================================================
 
 #[test]
 fn snapshot_error_frame() {
