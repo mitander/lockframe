@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 21229c07e9ca8cf6c8a2b15d9573fbe1b0d9fe0440a3b0b721491571f37b55a1 # shrinks to seed = 1, num_joiners = 1, join_methods = [ExternalJoin]
+cc 4d7deccc53eee0cf9d8424765f1ff89b12ff6ac357779a5ef3fb1ebcfa638bae # shrinks to seed = 1, num_joiners = 2

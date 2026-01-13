@@ -31,14 +31,18 @@ fn mls_group_creation() {
         assert_eq!(group.epoch(), 0, "Initial epoch should be 0");
         assert!(!group.has_pending_commit(), "No pending commit initially");
 
-        // Verify actions
-        assert_eq!(actions.len(), 1, "Should have one action (log)");
-        match &actions[0] {
+        // Verify actions (PublishGroupInfo + Log)
+        assert_eq!(actions.len(), 2, "Should have two actions");
+        assert!(
+            matches!(&actions[0], MlsAction::PublishGroupInfo { room_id: r, epoch: 0, .. } if *r == room_id),
+            "First action should be PublishGroupInfo"
+        );
+        match &actions[1] {
             MlsAction::Log { message } => {
                 assert!(message.contains("Created group"), "Should log group creation");
                 assert!(message.contains("epoch 0"), "Should mention epoch 0");
             },
-            _ => panic!("Expected Log action, got {:?}", actions[0]),
+            _ => panic!("Expected Log action, got {:?}", actions[1]),
         }
 
         Ok(())
