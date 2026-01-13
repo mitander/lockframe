@@ -3,10 +3,8 @@
 //! Tests verify that invariants hold under arbitrary event sequences.
 //! This ensures behavioral correctness across all possible execution paths.
 
-use lockframe_app::{App, AppEvent, KeyInput};
-use lockframe_harness::{
-    ClientSnapshot, InvariantRegistry, RoomSnapshot, SimDriver, SimEnv, SystemSnapshot,
-};
+use lockframe_app::{App, AppAction, AppEvent, Bridge, KeyInput};
+use lockframe_harness::{ClientSnapshot, InvariantRegistry, RoomSnapshot, SimEnv, SystemSnapshot};
 use proptest::prelude::*;
 
 /// Generate random printable characters for input.
@@ -85,7 +83,6 @@ proptest! {
     fn prop_input_buffer_clears_on_enter(chars in prop::collection::vec(printable_char(), 1..20)) {
         let mut app = App::new("localhost:4433".into());
 
-        // Type characters
         for c in &chars {
             let _ = app.handle(AppEvent::Key(KeyInput::Char(*c)));
         }
@@ -94,7 +91,6 @@ proptest! {
         let buffer_len = app.input_buffer().len();
         prop_assert_eq!(buffer_len, chars.len());
 
-        // Press enter
         let _ = app.handle(AppEvent::Key(KeyInput::Enter));
 
         // Buffer should be empty
@@ -122,35 +118,64 @@ proptest! {
     }
 }
 
+/// Helper to inject a command into App and process through Bridge.
+fn inject_command(app: &mut App, bridge: &mut Bridge<SimEnv>, cmd: &str) {
+    for c in cmd.chars() {
+        app.handle(AppEvent::Key(KeyInput::Char(c)));
+    }
+    let actions = app.handle(AppEvent::Key(KeyInput::Enter));
+
+    for action in actions {
+        match action {
+            AppAction::CreateRoom { .. }
+            | AppAction::JoinRoom { .. }
+            | AppAction::LeaveRoom { .. }
+            | AppAction::SendMessage { .. }
+            | AppAction::PublishKeyPackage
+            | AppAction::AddMember { .. } => {
+                let events = bridge.process_app_action(action);
+                for event in events {
+                    app.handle(event);
+                }
+            },
+            _ => {},
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(20))]
 
-    /// SimDriver invariants hold under command sequences.
+    /// App+Bridge invariants hold under command sequences.
     #[test]
-    fn prop_sim_driver_invariants_hold(
-        room_ids in prop::collection::vec(1u128..1000, 1..5)
-    ) {
+    fn prop_app_bridge_invariants_hold(room_ids in prop::collection::vec(1u128..1000, 1..5)) {
         let env = SimEnv::with_seed(42);
-        let mut driver: SimDriver<SimEnv> = SimDriver::new(env, 1, "localhost:4433")
-            .with_invariants(InvariantRegistry::standard());
+        let mut app = App::new("localhost:4433".into());
+        let mut bridge: Bridge<SimEnv> = Bridge::new(env, 1);
+        let invariants = InvariantRegistry::standard();
 
-        // Connect
-        driver.inject_connected(1, 1);
-        driver.process_pending();
+        // Simulate connected
+        app.handle(AppEvent::Connected { session_id: 1, sender_id: 1 });
 
         // Create rooms
         for room_id in &room_ids {
-            driver.inject_command(&format!("/create {}", room_id));
-            driver.process_pending();
+            inject_command(&mut app, &mut bridge, &format!("/create {}", room_id));
 
             // Verify room was created
-            prop_assert!(driver.app().rooms().contains_key(room_id));
+            prop_assert!(app.rooms().contains_key(room_id));
+
+            // Check invariants
+            let snapshot = snapshot_from_app(&app);
+            prop_assert!(
+                invariants.check_all(&snapshot).is_ok(),
+                "Invariant violated after creating room {}", room_id
+            );
         }
 
         // Verify all rooms still exist
         for room_id in &room_ids {
             prop_assert!(
-                driver.app().rooms().contains_key(room_id),
+                app.rooms().contains_key(room_id),
                 "Room {} should still exist",
                 room_id
             );
@@ -197,35 +222,34 @@ fn test_epoch_monotonicity_violation_detected() {
 }
 
 #[test]
-fn test_basic_app_flow() {
+fn test_basic_app_bridge_flow() {
     let env = SimEnv::with_seed(42);
-    let mut driver: SimDriver<SimEnv> =
-        SimDriver::new(env, 1, "localhost:4433").with_invariants(InvariantRegistry::standard());
+    let mut app = App::new("localhost:4433".into());
+    let mut bridge: Bridge<SimEnv> = Bridge::new(env, 1);
+    let invariants = InvariantRegistry::standard();
 
     // Initial state - no rooms
-    assert!(driver.app().rooms().is_empty());
-    assert!(driver.app().active_room().is_none());
+    assert!(app.rooms().is_empty());
+    assert!(app.active_room().is_none());
 
     // Connect
-    driver.inject_connected(1, 1);
-    driver.process_pending();
+    app.handle(AppEvent::Connected { session_id: 1, sender_id: 1 });
 
     // Create a room
-    driver.inject_command("/create 100");
-    driver.process_pending();
+    inject_command(&mut app, &mut bridge, "/create 100");
 
     // Verify room exists and is active
-    assert!(driver.app().rooms().contains_key(&100));
-    assert_eq!(driver.app().active_room(), Some(100));
+    assert!(app.rooms().contains_key(&100));
+    assert_eq!(app.active_room(), Some(100));
 
     // Send a message
-    driver.inject_message("hello world");
-    let frames = driver.process_pending();
+    inject_command(&mut app, &mut bridge, "hello world");
 
-    // Should produce outgoing frame
+    // Should have produced outgoing frames
+    let frames = bridge.take_outgoing();
     assert!(!frames.is_empty());
 
     // Snapshot should pass invariants
-    let snapshot = driver.snapshot();
-    assert!(InvariantRegistry::standard().check_all(&snapshot).is_ok());
+    let snapshot = snapshot_from_app(&app);
+    assert!(invariants.check_all(&snapshot).is_ok());
 }

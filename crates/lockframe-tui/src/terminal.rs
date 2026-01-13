@@ -124,7 +124,7 @@ impl Driver for TerminalDriver {
     }
 
     async fn recv_frame(&mut self) -> Option<Frame> {
-        if let Some(conn) = &mut self.connection { conn.from_server.recv().await } else { None }
+        self.connection.as_mut().and_then(|conn| conn.from_server.try_recv().ok())
     }
 
     async fn connect(&mut self, _addr: &str) -> Result<(), Self::Error> {

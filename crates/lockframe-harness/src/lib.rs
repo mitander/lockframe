@@ -36,7 +36,7 @@ pub use model::{
     ClientId, ErrorProperties, ModelClient, ModelMessage, ModelRoomId, ModelServer, ModelWorld,
     ObservableState, Operation, OperationError, OperationResult, PendingMessage, SmallMessage,
 };
-pub use sim_driver::SimDriver;
+pub use sim_driver::{SimDriver, SimDriverError};
 pub use sim_env::SimEnv;
 pub use sim_server::{SharedSimServer, SimServer, create_shared_server};
 pub use sim_transport::SimTransport;
