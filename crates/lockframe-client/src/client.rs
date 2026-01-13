@@ -297,6 +297,12 @@ impl<E: Environment> Client<E> {
         room_id: RoomId,
         frame: Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
+        if frame.header.sender_id() == self.identity.sender_id {
+            // Skip our own messages - we already have the plaintext locally
+            // and our sender ratchet has already advanced past this generation
+            return Ok(vec![]);
+        }
+
         let room = self.rooms.get_mut(&room_id).ok_or(ClientError::RoomNotFound { room_id })?;
 
         let frame_epoch = frame.header.epoch();
@@ -1171,7 +1177,7 @@ mod tests {
 
         let mut header = FrameHeader::new(Opcode::AppMessage);
         header.set_room_id(room_id);
-        header.set_sender_id(42);
+        header.set_sender_id(99); // Different sender
         header.set_epoch(0);
         let frame = Frame::new(header, Vec::<u8>::new());
 
