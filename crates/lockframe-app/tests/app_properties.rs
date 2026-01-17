@@ -144,7 +144,7 @@ fn inject_command(app: &mut App, bridge: &mut Bridge<SimEnv>, cmd: &str) {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(20))]
+    #![proptest_config(ProptestConfig::with_cases(100))]
 
     /// App+Bridge invariants hold under command sequences.
     #[test]

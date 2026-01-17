@@ -269,7 +269,7 @@ fn verify_convergence(cluster: &TestCluster) -> Result<(), String> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(30))]
+    #![proptest_config(ProptestConfig::with_cases(100))]
 
     /// Verifies that Welcome-based joins scale correctly. Regardless of how many
     /// clients join via Welcome, all should converge and be able to message.
