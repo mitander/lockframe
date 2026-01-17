@@ -87,6 +87,8 @@ pub struct RoomSnapshot {
     pub members: HashSet<u64>,
     /// Number of messages received.
     pub message_count: usize,
+    /// Log indices of received messages (for ordering invariants).
+    pub log_indices: Vec<u64>,
 }
 
 impl RoomSnapshot {
@@ -110,6 +112,12 @@ impl RoomSnapshot {
     /// Set message count.
     pub fn with_message_count(mut self, count: usize) -> Self {
         self.message_count = count;
+        self
+    }
+
+    /// Add received log indices.
+    pub fn with_log_indices(mut self, indices: impl IntoIterator<Item = u64>) -> Self {
+        self.log_indices.extend(indices);
         self
     }
 }

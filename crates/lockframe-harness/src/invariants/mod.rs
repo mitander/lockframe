@@ -22,7 +22,8 @@ mod checks;
 mod snapshot;
 
 pub use checks::{
-    ActiveRoomInRooms, EpochMonotonicity, MembershipConsistency, TreeHashConvergence,
+    ActiveRoomInRooms, EpochMonotonicity, MembershipConsistency, NoLogGaps, TotalOrdering,
+    TreeHashConvergence,
 };
 pub use snapshot::{ClientSnapshot, RoomSnapshot, SystemSnapshot};
 
@@ -88,12 +89,16 @@ impl InvariantRegistry {
     /// - [`EpochMonotonicity`]: epochs never decrease
     /// - [`MembershipConsistency`]: members agree on membership
     /// - [`TreeHashConvergence`]: tree hashes match at same epoch
+    /// - [`NoLogGaps`]: log indices are sequential with no gaps
+    /// - [`TotalOrdering`]: all clients see same message ordering
     pub fn standard() -> Self {
         let mut registry = Self::new();
         registry.add(ActiveRoomInRooms);
         registry.add(EpochMonotonicity);
         registry.add(MembershipConsistency);
         registry.add(TreeHashConvergence);
+        registry.add(NoLogGaps);
+        registry.add(TotalOrdering);
         registry
     }
 
@@ -141,7 +146,7 @@ mod tests {
     fn standard_registry_has_invariants() {
         let registry = InvariantRegistry::standard();
         assert!(!registry.is_empty());
-        assert_eq!(registry.len(), 4);
+        assert_eq!(registry.len(), 6);
     }
 
     #[test]
