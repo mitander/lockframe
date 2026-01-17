@@ -2,17 +2,6 @@
 //!
 //! These tests generate random operation sequences and verify that the real
 //! implementation behaves identically to the reference model.
-//!
-//! # Architecture
-//!
-//! ```text
-//! proptest generates: Vec<Operation>
-//!                          │
-//!           ┌──────────────┼──────────────┐
-//!           ▼              ▼              ▼
-//!      ModelWorld    RealWorld      Compare
-//!      (reference)   (turmoil)      Results
-//! ```
 
 use std::collections::HashMap;
 
@@ -21,7 +10,7 @@ use lockframe_harness::{
     ClientId, ModelMessage, ModelRoomId, ModelWorld, ObservableState, Operation, OperationError,
     OperationResult, SimEnv, SmallMessage,
 };
-use lockframe_proto::Frame;
+use lockframe_proto::{Frame, FrameHeader, Opcode, Payload, payloads::mls::GroupInfoPayload};
 use proptest::prelude::*;
 
 /// Pending frame waiting for delivery.
@@ -43,8 +32,6 @@ struct DeliveredMessage {
 /// Real system wrapper that mirrors ModelWorld's interface.
 struct RealWorld {
     clients: Vec<Client<SimEnv>>,
-    #[allow(dead_code)]
-    env: SimEnv,
     room_membership: HashMap<(ClientId, ModelRoomId), bool>,
     room_epochs: HashMap<(ClientId, ModelRoomId), u64>,
     pending_frames: Vec<PendingFrame>,
@@ -53,6 +40,7 @@ struct RealWorld {
     key_packages: HashMap<ClientId, Vec<Vec<u8>>>,
     partitioned: HashMap<ClientId, bool>,
     disconnected: HashMap<ClientId, bool>,
+    group_info: HashMap<ModelRoomId, Vec<u8>>,
 }
 
 const KEY_PACKAGES_PER_CLIENT: usize = 10;
@@ -81,7 +69,6 @@ impl RealWorld {
 
         Self {
             clients,
-            env,
             room_membership: HashMap::new(),
             room_epochs: HashMap::new(),
             pending_frames: Vec::new(),
@@ -90,6 +77,7 @@ impl RealWorld {
             key_packages,
             partitioned: HashMap::new(),
             disconnected: HashMap::new(),
+            group_info: HashMap::new(),
         }
     }
 
@@ -106,6 +94,9 @@ impl RealWorld {
             },
             Operation::AddMember { inviter_id, invitee_id, room_id } => {
                 self.apply_add_member(*inviter_id, *invitee_id, *room_id)
+            },
+            Operation::ExternalJoin { joiner_id, room_id } => {
+                self.apply_external_join(*joiner_id, *room_id)
             },
             Operation::RemoveMember { remover_id, target_id, room_id } => {
                 self.apply_remove_member(*remover_id, *target_id, *room_id)
@@ -268,18 +259,17 @@ impl RealWorld {
 
         let welcome_frame = actions.iter().find_map(|action| {
             if let ClientAction::Send(frame) = action {
-                if frame.header.opcode_enum() == Some(lockframe_proto::Opcode::Welcome) {
+                if frame.header.opcode_enum() == Some(Opcode::Welcome) {
                     return Some(frame.clone());
                 }
             }
             None
         });
 
-        // Commits must be delivered immediately so members can process the epoch
-        // transition
+        // Deliver commits immediately so members can process the epoch transition
         for action in &actions {
             if let ClientAction::Send(frame) = action {
-                if frame.header.opcode_enum() == Some(lockframe_proto::Opcode::Commit) {
+                if frame.header.opcode_enum() == Some(Opcode::Commit) {
                     let recipients: Vec<ClientId> = self
                         .room_membership
                         .iter()
@@ -327,6 +317,108 @@ impl RealWorld {
         OperationResult::Ok
     }
 
+    fn apply_external_join(
+        &mut self,
+        joiner_id: ClientId,
+        room_id: ModelRoomId,
+    ) -> OperationResult {
+        if joiner_id as usize >= self.clients.len() {
+            return OperationResult::Error(OperationError::InvalidClient);
+        }
+
+        if self.room_membership.get(&(joiner_id, room_id)).copied().unwrap_or(false) {
+            return OperationResult::Error(OperationError::AlreadyMember);
+        }
+
+        let group_info_bytes = match self.group_info.get(&room_id) {
+            Some(gi) => gi.clone(),
+            None => return OperationResult::Error(OperationError::NoGroupInfo),
+        };
+
+        let real_room_id = room_id as u128 + 1;
+
+        let joiner = &mut self.clients[joiner_id as usize];
+        if joiner.handle(ClientEvent::ExternalJoin { room_id: real_room_id }).is_err() {
+            return OperationResult::Error(OperationError::NoGroupInfo);
+        }
+
+        let current_epoch = self
+            .room_epochs
+            .iter()
+            .find(|&(&(_, rid), _)| rid == room_id)
+            .map(|(_, &e)| e)
+            .unwrap_or(0);
+
+        let payload =
+            GroupInfoPayload { room_id: real_room_id, epoch: current_epoch, group_info_bytes };
+
+        let frame =
+            match Payload::GroupInfo(payload).into_frame(FrameHeader::new(Opcode::GroupInfo)) {
+                Ok(f) => f,
+                Err(_) => return OperationResult::Error(OperationError::NoGroupInfo),
+            };
+
+        let join_actions = match joiner.handle(ClientEvent::FrameReceived(frame)) {
+            Ok(actions) => actions,
+            Err(_) => return OperationResult::Error(OperationError::NoGroupInfo),
+        };
+
+        let commit = join_actions.iter().find_map(|a| {
+            if let ClientAction::Send(frame) = a {
+                if matches!(
+                    frame.header.opcode_enum(),
+                    Some(Opcode::Commit) | Some(Opcode::ExternalCommit)
+                ) {
+                    return Some(frame.clone());
+                }
+            }
+            None
+        });
+
+        if let Some(commit) = commit {
+            let existing_members: Vec<ClientId> = self
+                .room_membership
+                .iter()
+                .filter(|&(&(_, rid), &m)| m && rid == room_id)
+                .map(|(&(cid, _), _)| cid)
+                .collect();
+
+            for member_id in existing_members {
+                if let Some(client) = self.clients.get_mut(member_id as usize) {
+                    let _ = client.handle(ClientEvent::FrameReceived(commit.clone()));
+                }
+            }
+        }
+
+        for action in &join_actions {
+            if let ClientAction::Send(frame) = action {
+                if frame.header.opcode_enum() == Some(Opcode::GroupInfo) {
+                    if let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame.clone()) {
+                        self.group_info.insert(room_id, gi.group_info_bytes);
+                    }
+                }
+            }
+        }
+
+        let new_epoch = current_epoch + 1;
+        let existing_members: Vec<ClientId> = self
+            .room_membership
+            .iter()
+            .filter(|&(&(_, rid), &m)| m && rid == room_id)
+            .map(|(&(cid, _), _)| cid)
+            .collect();
+
+        for cid in &existing_members {
+            let epoch = self.room_epochs.entry((*cid, room_id)).or_insert(0);
+            *epoch += 1;
+        }
+
+        self.room_membership.insert((joiner_id, room_id), true);
+        self.room_epochs.insert((joiner_id, room_id), new_epoch);
+
+        OperationResult::Ok
+    }
+
     fn apply_remove_member(
         &mut self,
         remover_id: ClientId,
@@ -366,11 +458,10 @@ impl RealWorld {
             Err(_) => return OperationResult::Error(OperationError::NotMember),
         };
 
-        // Commits must be delivered immediately so members can process the epoch
-        // transition
+        // Deliver commits immediately so members can process the epoch transition
         for action in &actions {
             if let ClientAction::Send(frame) = action {
-                if frame.header.opcode_enum() == Some(lockframe_proto::Opcode::Commit) {
+                if frame.header.opcode_enum() == Some(Opcode::Commit) {
                     let recipients: Vec<ClientId> = self
                         .room_membership
                         .iter()
@@ -424,9 +515,20 @@ impl RealWorld {
         let result = client.handle(ClientEvent::CreateRoom { room_id: real_room_id });
 
         match result {
-            Ok(_) => {
+            Ok(actions) => {
                 self.room_membership.insert((client_id, room_id), true);
                 self.room_epochs.insert((client_id, room_id), 0);
+
+                for action in &actions {
+                    if let ClientAction::Send(frame) = action {
+                        if frame.header.opcode_enum() == Some(Opcode::GroupInfo) {
+                            if let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame.clone()) {
+                                self.group_info.insert(room_id, gi.group_info_bytes);
+                            }
+                        }
+                    }
+                }
+
                 OperationResult::Ok
             },
             Err(_) => OperationResult::Error(OperationError::RoomAlreadyExists),
@@ -476,10 +578,10 @@ impl RealWorld {
                         sequenced_frame.header.set_log_index(log_index_val);
                         *self.next_log_index.get_mut(&room_id).unwrap() += 1;
 
-                        // Sender stores directly: ratchet advances after encryption, can't decrypt
-                        // own message
+                        // Store directly, we can't decrypt own message due to ratchet advance
                         let sender_epoch =
                             self.room_epochs.get(&(client_id, room_id)).copied().unwrap_or(0);
+
                         self.delivered_messages.push((client_id, DeliveredMessage {
                             room_id,
                             sender_id: client_id as u64,
@@ -528,6 +630,10 @@ impl RealWorld {
                     .filter(|&(&(_, rid), &m)| m && rid == room_id)
                     .map(|(&(cid, _), _)| cid)
                     .collect();
+
+                if remaining.is_empty() {
+                    self.group_info.remove(&room_id);
+                }
 
                 for cid in &remaining {
                     let epoch = self.room_epochs.entry((*cid, room_id)).or_insert(0);
@@ -596,6 +702,10 @@ impl RealWorld {
                 .map(|(&(cid, _), _)| cid)
                 .collect();
 
+            if remaining.is_empty() {
+                self.group_info.remove(&room_id);
+            }
+
             for cid in &remaining {
                 let epoch = self.room_epochs.entry((*cid, room_id)).or_insert(0);
                 *epoch += 1;
@@ -633,6 +743,9 @@ fn operation_strategy(num_clients: usize) -> impl Strategy<Value = Operation> {
         }),
         2 => (client_id.clone(), client_id.clone(), room_id.clone()).prop_map(|(i, e, r)| {
             Operation::AddMember { inviter_id: i, invitee_id: e, room_id: r }
+        }),
+        2 => (client_id.clone(), room_id.clone()).prop_map(|(j, r)| {
+            Operation::ExternalJoin { joiner_id: j, room_id: r }
         }),
         1 => (client_id.clone(), client_id.clone(), room_id.clone()).prop_map(|(r, t, room)| {
             Operation::RemoveMember { remover_id: r, target_id: t, room_id: room }

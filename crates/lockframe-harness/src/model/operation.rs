@@ -44,13 +44,24 @@ pub enum Operation {
         room_id: ModelRoomId,
     },
 
-    /// Add a member to a room (advances epoch).
+    /// Add a member to a room via Welcome (advances epoch).
     AddMember {
         /// Client performing the add (must be member).
         inviter_id: ClientId,
         /// Client being added.
         invitee_id: ClientId,
         /// Target room.
+        room_id: ModelRoomId,
+    },
+
+    /// Join a room via external commit.
+    ///
+    /// The joiner creates an external commit using the room's GroupInfo.
+    /// This is different from AddMember where an existing member invites.
+    ExternalJoin {
+        /// Client joining the room.
+        joiner_id: ClientId,
+        /// Room to join.
         room_id: ModelRoomId,
     },
 
@@ -160,6 +171,9 @@ pub enum OperationError {
     /// Cannot remove self (use LeaveRoom instead).
     CannotRemoveSelf,
 
+    /// No GroupInfo available for external join.
+    NoGroupInfo,
+
     /// Epoch mismatch (message from wrong epoch).
     EpochMismatch {
         /// Expected epoch.
@@ -196,9 +210,10 @@ impl OperationError {
             },
 
             // Transient errors: can be handled without reconnection
-            Self::RoomNotFound | Self::RoomAlreadyExists | Self::AlreadyMember => {
-                ErrorProperties { is_fatal: false, is_retryable: false }
-            },
+            Self::RoomNotFound
+            | Self::RoomAlreadyExists
+            | Self::AlreadyMember
+            | Self::NoGroupInfo => ErrorProperties { is_fatal: false, is_retryable: false },
 
             // Retryable errors: sync can fix, or wait for partition heal
             Self::EpochMismatch { .. } | Self::Partitioned => {

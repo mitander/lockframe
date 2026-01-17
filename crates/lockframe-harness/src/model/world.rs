@@ -79,6 +79,9 @@ impl ModelWorld {
             Operation::AddMember { inviter_id, invitee_id, room_id } => {
                 self.apply_add_member(*inviter_id, *invitee_id, *room_id)
             },
+            Operation::ExternalJoin { joiner_id, room_id } => {
+                self.apply_external_join(*joiner_id, *room_id)
+            },
             Operation::RemoveMember { remover_id, target_id, room_id } => {
                 self.apply_remove_member(*remover_id, *target_id, *room_id)
             },
@@ -281,6 +284,41 @@ impl ModelWorld {
 
         self.server.add_member(room_id, invitee_id);
         let _ = self.clients[invitee_id as usize].join_room_at_epoch(room_id, new_epoch);
+
+        OperationResult::Ok
+    }
+
+    /// Apply external join operation.
+    ///
+    /// Joiner joins using GroupInfo (no inviter needed). Advances epoch.
+    fn apply_external_join(
+        &mut self,
+        joiner_id: ClientId,
+        room_id: ModelRoomId,
+    ) -> OperationResult {
+        if joiner_id as usize >= self.clients.len() {
+            return OperationResult::Error(OperationError::InvalidClient);
+        }
+
+        if self.clients[joiner_id as usize].is_member(room_id) {
+            return OperationResult::Error(OperationError::AlreadyMember);
+        }
+
+        if self.server.epoch(room_id).is_none() {
+            return OperationResult::Error(OperationError::NoGroupInfo);
+        }
+
+        self.server.advance_epoch(room_id);
+        let new_epoch = self.server.epoch(room_id).unwrap_or(0);
+
+        for client in &mut self.clients {
+            if client.is_member(room_id) {
+                client.advance_epoch(room_id);
+            }
+        }
+
+        self.server.add_member(room_id, joiner_id);
+        let _ = self.clients[joiner_id as usize].join_room_at_epoch(room_id, new_epoch);
 
         OperationResult::Ok
     }
