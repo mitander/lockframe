@@ -307,6 +307,63 @@ fn prop_storage_chaos_mls_state_overwrite() {
 }
 
 #[test]
+fn prop_storage_conflict_detection() {
+    proptest!(|(
+        seed in any::<u64>(),
+        room_id in any::<u128>(),
+        initial_frames in 1usize..10,
+        gap_size in 1u64..10,
+    )| {
+        // Use 0% failure rate - testing conflict detection, not chaos
+        let storage = ChaoticStorage::with_seed(MemoryStorage::new(), 0.0, seed);
+
+        // Write initial frames sequentially
+        for i in 0..initial_frames {
+            let frame = create_test_frame(room_id, i as u64, vec![i as u8]);
+            storage.store_frame(room_id, i as u64, &frame)
+                .expect("sequential write should succeed");
+        }
+
+        // Attempt to write with a gap
+        let gap_index = initial_frames as u64 + gap_size;
+        let frame = create_test_frame(room_id, gap_index, vec![0xff]);
+        let result = storage.store_frame(room_id, gap_index, &frame);
+
+        // ORACLE: Gap must produce Conflict error
+        match result {
+            Err(StorageError::Conflict { expected, got }) => {
+                prop_assert_eq!(
+                    expected,
+                    initial_frames as u64,
+                    "Expected index should be next sequential"
+                );
+                prop_assert_eq!(got, gap_index, "Got index should be the gap index");
+            }
+            Ok(()) => {
+                panic!("Gap write should have failed with Conflict error");
+            }
+            Err(e) => {
+                panic!("Expected Conflict error, got: {:?}", e);
+            }
+        }
+
+        // ORACLE: Storage state unchanged after failed write
+        verify_frame_sequence(storage.inner(), room_id)
+            .expect("Sequence should be unchanged after failed write");
+
+        let latest = storage.inner()
+            .latest_log_index(room_id)
+            .expect("latest_log_index failed");
+
+        prop_assert_eq!(
+            latest,
+            Some(initial_frames as u64 - 1),
+            "Latest index should be unchanged after failed write"
+        );
+    });
+}
+
+#[test]
 fn prop_storage_chaos_concurrent_rooms() {
     proptest!(|(
         failure_rate in 0.0..0.5,
