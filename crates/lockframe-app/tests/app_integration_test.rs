@@ -16,6 +16,7 @@
 //! - Member lists are consistent
 
 use lockframe_app::{App, AppAction, AppEvent, Bridge, KeyInput};
+use lockframe_core::env::Environment;
 use lockframe_harness::SimEnv;
 use lockframe_proto::{Frame, FrameHeader, Opcode, Payload, payloads::mls::GroupInfoPayload};
 
@@ -28,11 +29,7 @@ fn connected_app(sender_id: u64) -> App {
 
 /// Inject a command into App and process through Bridge.
 /// Returns the outgoing frames that would be sent to server.
-fn inject_command<E: lockframe_core::env::Environment>(
-    app: &mut App,
-    bridge: &mut Bridge<E>,
-    cmd: &str,
-) -> Vec<Frame> {
+fn inject_command<E: Environment>(app: &mut App, bridge: &mut Bridge<E>, cmd: &str) -> Vec<Frame> {
     for c in cmd.chars() {
         app.handle(AppEvent::Key(KeyInput::Char(c)));
     }
@@ -46,11 +43,7 @@ fn inject_command<E: lockframe_core::env::Environment>(
 }
 
 /// Process a single AppAction through Bridge and update App.
-fn process_app_action<E: lockframe_core::env::Environment>(
-    app: &mut App,
-    bridge: &mut Bridge<E>,
-    action: AppAction,
-) {
+fn process_app_action<E: Environment>(app: &mut App, bridge: &mut Bridge<E>, action: AppAction) {
     match action {
         AppAction::CreateRoom { .. }
         | AppAction::JoinRoom { .. }
@@ -68,11 +61,7 @@ fn process_app_action<E: lockframe_core::env::Environment>(
 }
 
 /// Simulate receiving a frame from the server.
-fn receive_frame<E: lockframe_core::env::Environment>(
-    app: &mut App,
-    bridge: &mut Bridge<E>,
-    frame: Frame,
-) {
+fn receive_frame<E: Environment>(app: &mut App, bridge: &mut Bridge<E>, frame: Frame) {
     let events = bridge.handle_frame(frame);
     for event in events {
         app.handle(event);
