@@ -1310,6 +1310,9 @@ checksum = "1b66886d14d18d420ab5052cbff544fc5d34d0b2cdd35eb5976aaa10a4a472e5"
 dependencies = [
  "console",
  "once_cell",
+ "pest",
+ "pest_derive",
+ "serde",
  "similar",
  "tempfile",
 ]
@@ -1722,6 +1725,7 @@ dependencies = [
  "arbitrary",
  "async-trait",
  "bytes",
+ "insta",
  "lockframe-app",
  "lockframe-client",
  "lockframe-core",
@@ -1730,6 +1734,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "serde",
  "tokio",
  "tracing",
  "turmoil",

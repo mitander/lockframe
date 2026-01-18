@@ -4,14 +4,15 @@
 //! Invariants operate on snapshots rather than live state to ensure
 //! consistent, atomic checks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use lockframe_core::mls::RoomId;
+use serde::Serialize;
 
 /// Snapshot of the entire system state.
 ///
 /// Contains observable state from one or more clients for invariant checking.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SystemSnapshot {
     /// Per-client state snapshots.
     pub clients: Vec<ClientSnapshot>,
@@ -40,7 +41,7 @@ impl SystemSnapshot {
 }
 
 /// Snapshot of a single client's observable state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ClientSnapshot {
     /// Client identifier.
     pub id: u64,
@@ -77,14 +78,14 @@ impl ClientSnapshot {
 }
 
 /// Snapshot of a room's observable state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct RoomSnapshot {
     /// MLS epoch number.
     pub epoch: u64,
     /// Tree hash for convergence checking.
     pub tree_hash: [u8; 32],
-    /// Member IDs in this room.
-    pub members: HashSet<u64>,
+    /// Member IDs in this room (BTreeSet for deterministic ordering).
+    pub members: BTreeSet<u64>,
     /// Number of messages received.
     pub message_count: usize,
     /// Log indices of received messages (for ordering invariants).

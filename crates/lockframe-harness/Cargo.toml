@@ -31,6 +31,9 @@ arbitrary = { version = "1.4", features = ["derive"] }
 # Logging
 tracing = "0.1"
 
+# Serialization (for snapshot testing)
+serde = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
 # Client for E2E tests
 lockframe-client = { path = "../lockframe-client" }
@@ -40,6 +43,9 @@ bytes = "1.9"
 
 # Property-based testing
 proptest = "1.5"
+
+# Snapshot testing
+insta = { version = "1.46.0", features = ["json", "redactions"] }
 
 [lints]
 workspace = true

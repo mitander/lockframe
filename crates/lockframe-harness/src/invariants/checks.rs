@@ -3,7 +3,7 @@
 //! These invariants capture behavioral properties that must always hold.
 //! They verify WHAT must be true, not specific test scenarios.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::{Invariant, InvariantResult, SystemSnapshot, Violation};
 
@@ -82,7 +82,8 @@ impl Invariant for MembershipConsistency {
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
         // Group clients by (room_id, epoch) and compare their member sets
-        let mut room_epoch_members: HashMap<(u128, u64), Vec<(u64, HashSet<u64>)>> = HashMap::new();
+        let mut room_epoch_members: HashMap<(u128, u64), Vec<(u64, BTreeSet<u64>)>> =
+            HashMap::new();
 
         for client in &state.clients {
             for (room_id, room) in &client.rooms {
