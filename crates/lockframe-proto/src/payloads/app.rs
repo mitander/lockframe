@@ -43,19 +43,6 @@ pub struct EncryptedMessage {
     /// Only included for high-priority messages (DMs, mentions).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub push_keys: Option<Vec<PushKey>>,
-
-    /// Optional: Server-visible plaintext for history storage.
-    ///
-    /// When present, the server stores this plaintext alongside the encrypted
-    /// frame. This enables new members to see messages sent before they joined
-    /// (which they cannot decrypt due to MLS forward secrecy).
-    ///
-    /// TODO:
-    ///
-    /// This totally bricks the E2EE. This is done intentionally FOR NOW but
-    /// should be replaced with client side history sync ASAP.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub server_plaintext: Option<Vec<u8>>,
 }
 
 /// Push-Carried Ephemeral Key for a specific recipient
@@ -129,7 +116,6 @@ mod tests {
             nonce: [0; 24],
             ciphertext: vec![1, 2, 3, 4],
             push_keys: None,
-            server_plaintext: None,
         };
 
         let cbor = ciborium::ser::into_writer(&msg, Vec::new());
@@ -145,7 +131,6 @@ mod tests {
             nonce: [0xAB; 24],
             ciphertext: vec![1, 2, 3, 4, 5, 6, 7, 8],
             push_keys: None,
-            server_plaintext: Some(b"hello world".to_vec()),
         };
 
         // Encode to CBOR

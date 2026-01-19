@@ -134,7 +134,6 @@ fn snapshot_encrypted_message_frame() {
         nonce: [0x02; 24],
         ciphertext: vec![0xca, 0xfe, 0xba, 0xbe],
         push_keys: None,
-        server_plaintext: None,
     });
 
     let frame = msg
