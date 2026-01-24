@@ -14,8 +14,6 @@
 //! - Manages time ticks generically to support both real-time execution and
 //!   deterministic simulation.
 
-use std::{ops::Sub, time::Duration};
-
 use lockframe_client::{Client, ClientAction, ClientError, ClientEvent, ClientIdentity};
 use lockframe_core::env::Environment;
 use lockframe_proto::{Frame, FrameHeader, Opcode, Payload, payloads::session::SyncRequest};
@@ -24,26 +22,19 @@ use crate::{AppAction, AppEvent};
 
 /// Bridge between App and Client protocol logic.
 ///
-/// Generic over Environment and Instant to support both production
-/// (std::time::Instant) and simulation (turmoil::Instant).
-pub struct Bridge<E: Environment, I = std::time::Instant>
-where
-    I: Copy + Ord + Sub<Output = Duration>,
-{
+/// Generic over Environment to support both production and simulation.
+/// The Instant type is determined by the Environment's associated type.
+pub struct Bridge<E: Environment> {
     client: Client<E>,
     outgoing: Vec<Frame>,
-    _instant: std::marker::PhantomData<I>,
 }
 
-impl<E: Environment, I> Bridge<E, I>
-where
-    I: Copy + Ord + Sub<Output = Duration>,
-{
+impl<E: Environment> Bridge<E> {
     /// Create a new Bridge with the given environment and sender ID.
     pub fn new(env: E, sender_id: u64) -> Self {
         let identity = ClientIdentity::new(sender_id);
         let client = Client::new(env, identity);
-        Self { client, outgoing: Vec::new(), _instant: std::marker::PhantomData }
+        Self { client, outgoing: Vec::new() }
     }
 
     /// Client's stable sender ID.
@@ -103,11 +94,8 @@ where
     }
 
     /// Process a time tick.
-    pub fn handle_tick(&mut self, now: I) -> Vec<AppEvent> {
-        // Convert generic Instant to std::time::Instant for Client
-        // This works because Client only uses the tick for timeout checks
-        let result = self.client.handle(ClientEvent::Tick { now: std::time::Instant::now() });
-        let _ = now; // Acknowledge the parameter (for future virtual time support)
+    pub fn handle_tick(&mut self, now: E::Instant) -> Vec<AppEvent> {
+        let result = self.client.handle(ClientEvent::Tick { now });
         self.handle_client_result(result)
     }
 
@@ -193,6 +181,7 @@ mod tests {
         future::Future,
         pin::Pin,
         task::{Context, Poll},
+        time::Duration,
     };
 
     use lockframe_core::env::Environment;
@@ -212,6 +201,7 @@ mod tests {
     struct TestEnv;
 
     impl Environment for TestEnv {
+        type Instant = std::time::Instant;
         fn now(&self) -> std::time::Instant {
             std::time::Instant::now()
         }

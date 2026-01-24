@@ -133,17 +133,17 @@ pub struct MlsGroup<E: Environment> {
     provider: MlsProvider<E>,
 
     /// Pending commit that we sent (waiting for sequencer acceptance)
-    pending_commit: Option<PendingCommit>,
+    pending_commit: Option<PendingCommit<E::Instant>>,
 }
 
 /// Tracks a commit we sent that's waiting for sequencer acceptance.
 #[derive(Debug, Clone)]
-struct PendingCommit {
+struct PendingCommit<I> {
     /// Epoch this commit will create when accepted
     target_epoch: u64,
 
     /// When we sent it (for timeout detection)
-    sent_at: std::time::Instant,
+    sent_at: I,
 }
 
 impl<E: Environment> MlsGroup<E> {
@@ -276,7 +276,7 @@ impl<E: Environment> MlsGroup<E> {
     }
 
     /// Pending commit has exceeded timeout duration.
-    pub fn is_commit_timeout(&self, now: std::time::Instant, timeout: Duration) -> bool {
+    pub fn is_commit_timeout(&self, now: E::Instant, timeout: Duration) -> bool {
         self.pending_commit
             .as_ref()
             .map(|pending| now - pending.sent_at >= timeout)
@@ -961,6 +961,7 @@ mod tests {
     struct TestEnv;
 
     impl Environment for TestEnv {
+        type Instant = std::time::Instant;
         fn now(&self) -> Instant {
             Instant::now()
         }

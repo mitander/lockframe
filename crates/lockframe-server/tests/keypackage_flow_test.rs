@@ -20,7 +20,9 @@ use lockframe_server::{DriverConfig, MemoryStorage, ServerAction, ServerDriver, 
 struct TestEnv;
 
 impl Environment for TestEnv {
-    fn now(&self) -> std::time::Instant {
+    type Instant = std::time::Instant;
+
+    fn now(&self) -> Self::Instant {
         std::time::Instant::now()
     }
 

@@ -446,6 +446,7 @@ mod tests {
     struct TestEnv;
 
     impl crate::env::Environment for TestEnv {
+        type Instant = Instant;
         fn now(&self) -> Instant {
             Instant::now()
         }

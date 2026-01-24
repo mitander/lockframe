@@ -21,7 +21,9 @@ use proptest::prelude::*;
 struct TestEnv;
 
 impl Environment for TestEnv {
-    fn now(&self) -> Instant {
+    type Instant = Instant;
+
+    fn now(&self) -> Self::Instant {
         Instant::now()
     }
 

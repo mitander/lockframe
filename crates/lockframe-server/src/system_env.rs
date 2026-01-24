@@ -46,7 +46,9 @@ impl SystemEnv {
 }
 
 impl Environment for SystemEnv {
-    fn now(&self) -> std::time::Instant {
+    type Instant = std::time::Instant;
+
+    fn now(&self) -> Self::Instant {
         std::time::Instant::now()
     }
 

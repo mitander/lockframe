@@ -4,7 +4,7 @@
 //! deterministic simulation with Turmoil (virtual clock, seeded RNG) and
 //! production use with real system resources.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Abstract environment providing time, randomness, and async primitives.
 ///
@@ -17,6 +17,12 @@ use std::time::{Duration, Instant};
 /// - Methods are infallible except in exceptional circumstances (e.g., OS
 ///   entropy exhaustion, incorrect simulation setup)
 pub trait Environment: Clone + Send + Sync + 'static {
+    /// The specific instant type used by this environment.
+    ///
+    /// Production environments use `std::time::Instant`, while simulation
+    /// environments use virtual time (e.g., `turmoil::Instant`).
+    type Instant: Copy + Ord + Send + Sync + std::ops::Sub<Output = Duration>;
+
     /// Current time (monotonic).
     ///
     /// # Invariants
@@ -24,7 +30,7 @@ pub trait Environment: Clone + Send + Sync + 'static {
     /// - This method MUST return values that never decrease within a single
     ///   execution context. Subsequent calls must return times >= previous
     ///   calls.
-    fn now(&self) -> Instant;
+    fn now(&self) -> Self::Instant;
 
     /// Sleeps for the specified duration.
     ///

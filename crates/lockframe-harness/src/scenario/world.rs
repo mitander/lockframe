@@ -7,6 +7,8 @@
 //! Multi-actor scenarios will require turmoil integration for proper network
 //! simulation.
 
+use std::{ops::Sub, time::Duration};
+
 use lockframe_core::connection::{Connection, ConnectionState};
 
 /// Network events that occurred during scenario execution.
@@ -23,9 +25,14 @@ pub enum NetworkEvent {
 }
 
 /// World state containing single client-server pair and metrics.
-pub struct World {
-    client: Option<Connection>,
-    server: Option<Connection>,
+///
+/// Generic over `I` (Instant type) to support virtual time in tests.
+pub struct World<I = std::time::Instant>
+where
+    I: Copy + Ord + Send + Sync + Sub<Output = Duration>,
+{
+    client: Option<Connection<I>>,
+    server: Option<Connection<I>>,
     client_frames_sent: usize,
     client_frames_received: usize,
     server_frames_sent: usize,
@@ -33,7 +40,10 @@ pub struct World {
     network_events: Vec<NetworkEvent>,
 }
 
-impl World {
+impl<I> World<I>
+where
+    I: Copy + Ord + Send + Sync + Sub<Output = Duration>,
+{
     /// Create a new empty world.
     pub fn new() -> Self {
         Self {
@@ -50,7 +60,7 @@ impl World {
     /// Set the client connection.
     ///
     /// Panics if client is already set.
-    pub(crate) fn set_client(&mut self, connection: Connection) {
+    pub(crate) fn set_client(&mut self, connection: Connection<I>) {
         assert!(self.client.is_none(), "client already set");
         self.client = Some(connection);
     }
@@ -58,7 +68,7 @@ impl World {
     /// Set the server connection.
     ///
     /// Panics if server is already set.
-    pub(crate) fn set_server(&mut self, connection: Connection) {
+    pub(crate) fn set_server(&mut self, connection: Connection<I>) {
         assert!(self.server.is_none(), "server already set");
         self.server = Some(connection);
     }
@@ -66,28 +76,28 @@ impl World {
     /// Client connection state (for oracle/assertions).
     ///
     /// Panics if no client has been set.
-    pub fn client(&self) -> &Connection {
+    pub fn client(&self) -> &Connection<I> {
         self.client.as_ref().expect("no client in world")
     }
 
     /// Server connection state (for oracle/assertions).
     ///
     /// Panics if no server has been set.
-    pub fn server(&self) -> &Connection {
+    pub fn server(&self) -> &Connection<I> {
         self.server.as_ref().expect("no server in world")
     }
 
     /// Mutable client connection state.
     ///
     /// Panics if no client has been set.
-    pub(crate) fn client_mut(&mut self) -> &mut Connection {
+    pub(crate) fn client_mut(&mut self) -> &mut Connection<I> {
         self.client.as_mut().expect("no client in world")
     }
 
     /// Mutable server connection state.
     ///
     /// Panics if no server has been set.
-    pub(crate) fn server_mut(&mut self) -> &mut Connection {
+    pub(crate) fn server_mut(&mut self) -> &mut Connection<I> {
         self.server.as_mut().expect("no server in world")
     }
 

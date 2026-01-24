@@ -3,12 +3,13 @@
 //! Provides a declarative API for constructing scenario tests that enforce
 //! the Oracle Pattern.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use lockframe_core::{
     connection::{Connection, ConnectionAction, ConnectionConfig},
     env::Environment,
 };
+use tokio::time::Instant;
 
 use crate::{
     SimEnv,
@@ -64,7 +65,7 @@ impl Scenario {
     ///
     /// The oracle is mandatory - you cannot run a scenario without
     /// verification.
-    pub fn oracle(self, oracle: OracleFn) -> RunnableScenario {
+    pub fn oracle(self, oracle: OracleFn<Instant>) -> RunnableScenario {
         RunnableScenario { scenario: self, oracle }
     }
 }
@@ -78,7 +79,7 @@ impl Default for Scenario {
 /// A scenario with an oracle function that can be executed.
 pub struct RunnableScenario {
     scenario: Scenario,
-    oracle: OracleFn,
+    oracle: OracleFn<Instant>,
 }
 
 impl RunnableScenario {
@@ -94,7 +95,7 @@ impl RunnableScenario {
     ///
     /// Finally, the oracle is invoked to verify global consistency.
     pub fn run(self) -> Result<(), String> {
-        let mut world = World::new();
+        let mut world: World<Instant> = World::new();
         let env = SimEnv::new();
         let now = env.now();
 
@@ -118,7 +119,7 @@ impl RunnableScenario {
     }
 
     /// Execute the handshake between client and server.
-    fn execute_handshake(&self, world: &mut World, now: Instant) -> Result<(), String> {
+    fn execute_handshake(&self, world: &mut World<Instant>, now: Instant) -> Result<(), String> {
         let hello_frame = {
             let client = world.client_mut();
             let actions =
@@ -169,7 +170,7 @@ impl RunnableScenario {
     }
 
     /// Tick both connections at the given time and process resulting actions.
-    fn tick_connections(&self, world: &mut World, now: Instant) -> Result<(), String> {
+    fn tick_connections(&self, world: &mut World<Instant>, now: Instant) -> Result<(), String> {
         let client_actions = world.client_mut().tick(now);
         self.process_actions(world, Actor::Client, client_actions)?;
 
@@ -182,7 +183,7 @@ impl RunnableScenario {
     /// Process actions returned by tick() or other connection methods.
     fn process_actions(
         &self,
-        world: &mut World,
+        world: &mut World<Instant>,
         actor: Actor,
         actions: Vec<ConnectionAction>,
     ) -> Result<(), String> {

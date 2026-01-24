@@ -1,7 +1,5 @@
 //! Client events and actions.
 
-use std::time::Instant;
-
 use lockframe_core::mls::RoomId;
 use lockframe_proto::Frame;
 
@@ -11,8 +9,11 @@ use lockframe_proto::Frame;
 /// - Receiving frames from the network
 /// - Driving time forward via ticks
 /// - Forwarding application intents (send message, create room, etc.)
+///
+/// Generic over `I` (Instant type) to support both production
+/// (std::time::Instant) and simulation (tokio::time::Instant) environments.
 #[derive(Debug, Clone)]
-pub enum ClientEvent {
+pub enum ClientEvent<I = std::time::Instant> {
     /// Frame received from server.
     FrameReceived(Frame),
 
@@ -22,7 +23,7 @@ pub enum ClientEvent {
     /// to detect timeouts and perform housekeeping.
     Tick {
         /// Current time from the environment.
-        now: Instant,
+        now: I,
     },
 
     /// Application wants to send a message.

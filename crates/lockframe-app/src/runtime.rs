@@ -25,13 +25,13 @@ where
 {
     driver: D,
     app: App,
-    bridge: Bridge<E, D::Instant>,
+    bridge: Bridge<E>,
     server_addr: String,
 }
 
 impl<D, E> Runtime<D, E>
 where
-    D: Driver,
+    D: Driver<Instant = E::Instant>,
     E: Environment,
     D::Instant: Sub<Output = Duration>,
 {

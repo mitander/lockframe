@@ -5,7 +5,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use lockframe_core::{
@@ -94,7 +94,7 @@ pub struct Client<E: Environment> {
 
     /// Pending add member operations.
     /// Maps (room_id, user_id) to timestamp for completing the add.
-    pending_adds: HashMap<(RoomId, u64), Instant>,
+    pending_adds: HashMap<(RoomId, u64), E::Instant>,
 
     /// Pending external joins awaiting GroupInfo responses.
     pending_external_joins: HashSet<RoomId>,
@@ -172,7 +172,10 @@ impl<E: Environment> Client<E> {
     }
 
     /// Process an event and return resulting actions.
-    pub fn handle(&mut self, event: ClientEvent) -> Result<Vec<ClientAction>, ClientError> {
+    pub fn handle(
+        &mut self,
+        event: ClientEvent<E::Instant>,
+    ) -> Result<Vec<ClientAction>, ClientError> {
         match event {
             ClientEvent::CreateRoom { room_id } => self.handle_create_room(room_id),
             ClientEvent::SendMessage { room_id, plaintext } => {
@@ -911,15 +914,13 @@ impl<E: Environment> Client<E> {
     /// Also cleans up stale pending KeyPackage fetch operations.
     /// For rooms with timed-out commits, clears the pending state and emits
     /// `RequestSync` actions.
-    fn handle_tick(&mut self, now: Instant) -> Result<Vec<ClientAction>, ClientError> {
+    fn handle_tick(&mut self, now: E::Instant) -> Result<Vec<ClientAction>, ClientError> {
         let mut actions = Vec::new();
 
         let stale_adds: Vec<(RoomId, u64)> = self
             .pending_adds
             .iter()
-            .filter(|((_, _), timestamp)| {
-                now.duration_since(**timestamp) > KEY_PACKAGE_FETCH_TIMEOUT
-            })
+            .filter(|((_, _), timestamp)| now - **timestamp > KEY_PACKAGE_FETCH_TIMEOUT)
             .map(|((room_id, user_id), _)| (*room_id, *user_id))
             .collect();
 
@@ -1049,7 +1050,7 @@ mod tests {
         future::Future,
         pin::Pin,
         task::{Context, Poll},
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     use super::*;
@@ -1068,8 +1069,10 @@ mod tests {
     struct TestEnv;
 
     impl Environment for TestEnv {
-        fn now(&self) -> Instant {
-            Instant::now()
+        type Instant = std::time::Instant;
+
+        fn now(&self) -> Self::Instant {
+            std::time::Instant::now()
         }
 
         fn sleep(&self, _duration: Duration) -> impl Future<Output = ()> + Send {
@@ -1267,7 +1270,7 @@ mod tests {
         assert!(client.pending_adds.contains_key(&(room_id, user_id)));
 
         // Simulate time passing beyond timeout
-        let now = Instant::now() + KEY_PACKAGE_FETCH_TIMEOUT + Duration::from_secs(1);
+        let now = std::time::Instant::now() + KEY_PACKAGE_FETCH_TIMEOUT + Duration::from_secs(1);
         let actions = client.handle(ClientEvent::Tick { now }).unwrap();
 
         // Verify pending add was cleaned up

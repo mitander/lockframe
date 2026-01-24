@@ -14,7 +14,9 @@ use lockframe_server::{MemoryStorage, RoomManager};
 struct TestEnv;
 
 impl Environment for TestEnv {
-    fn now(&self) -> std::time::Instant {
+    type Instant = std::time::Instant;
+
+    fn now(&self) -> Self::Instant {
         std::time::Instant::now()
     }
 

@@ -10,7 +10,9 @@ use crate::scenario::World;
 /// Receives immutable reference to world state and returns:
 /// - `Ok(())` if all invariants hold
 /// - `Err(message)` if verification fails
-pub type OracleFn = Box<dyn FnOnce(&World) -> Result<(), String>>;
+///
+/// Generic over `I` (Instant type) to support virtual time in tests.
+pub type OracleFn<I = std::time::Instant> = Box<dyn FnOnce(&World<I>) -> Result<(), String>>;
 
 /// Create an oracle that verifies all actors are authenticated.
 pub fn all_authenticated() -> OracleFn {

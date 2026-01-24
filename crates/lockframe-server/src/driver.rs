@@ -3,7 +3,7 @@
 //! Ties together connection state machines, RoomManager (MLS validation +
 //! sequencing), ConnectionRegistry (session-to-room mapping), and storage.
 
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 use lockframe_core::{
     connection::{Connection, ConnectionAction, ConnectionConfig},
@@ -71,8 +71,10 @@ pub enum ServerEvent {
 /// Actions that the server driver produces.
 ///
 /// These are executed by runtime-specific code (production or simulation).
+///
+/// Generic over `I` (Instant type) to support virtual time in tests.
 #[derive(Debug, Clone)]
-pub enum ServerAction {
+pub enum ServerAction<I = std::time::Instant> {
     /// Send a frame to a specific session
     SendToSession {
         /// Target session ID
@@ -116,7 +118,7 @@ pub enum ServerAction {
         /// Message to log
         message: String,
         /// When the event occurred
-        timestamp: Instant,
+        timestamp: I,
     },
 }
 
@@ -142,11 +144,11 @@ where
     S: Storage,
 {
     /// Connection state machines (session_id → Connection)
-    connections: HashMap<u64, Connection>,
+    connections: HashMap<u64, Connection<E::Instant>>,
     /// Session/room registry
     pub(crate) registry: ConnectionRegistry,
     /// Room manager (routing + sequencing)
-    room_manager: RoomManager,
+    room_manager: RoomManager<E::Instant>,
     /// KeyPackage registry for publish/fetch operations
     key_package_registry: KeyPackageRegistry,
     /// Storage backend
@@ -178,7 +180,10 @@ where
     /// Process a server event and return actions to execute.
     ///
     /// This is the main entry point for the server driver.
-    pub fn process_event(&mut self, event: ServerEvent) -> Result<Vec<ServerAction>, ServerError> {
+    pub fn process_event(
+        &mut self,
+        event: ServerEvent,
+    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         match event {
             ServerEvent::ConnectionAccepted { session_id } => {
                 self.handle_connection_accepted(session_id)
@@ -197,7 +202,7 @@ where
     fn handle_connection_accepted(
         &mut self,
         session_id: u64,
-    ) -> Result<Vec<ServerAction>, ServerError> {
+    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         let now = self.env.now();
 
         if self.connections.len() >= self.config.max_connections {
@@ -225,7 +230,7 @@ where
         &mut self,
         session_id: u64,
         frame: Frame,
-    ) -> Result<Vec<ServerAction>, ServerError> {
+    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -378,10 +383,14 @@ where
     }
 
     /// Handle a sync request from a client.
-    fn handle_sync_request(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+    fn handle_sync_request(
+        &mut self,
+        session_id: u64,
+        frame: &Frame,
+    ) -> Vec<ServerAction<E::Instant>> {
         let room_id = frame.header.room_id();
 
-        let result = (|| -> Result<Vec<ServerAction>, ServerError> {
+        let result = (|| -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
             let payload = Payload::from_frame(frame.clone())?;
             let (from_log_index, limit) = match payload {
                 Payload::SyncRequest(req) => (req.from_log_index, req.limit as usize),
@@ -413,7 +422,7 @@ where
         session_id: u64,
         room_id: u128,
         error: &ServerError,
-    ) -> Vec<ServerAction> {
+    ) -> Vec<ServerAction<E::Instant>> {
         let error_payload = match error {
             ServerError::Room(room_err) => match room_err {
                 crate::room_manager::RoomError::RoomNotFound(_) => {
@@ -451,7 +460,11 @@ where
     }
 
     /// Handle KeyPackage publish request.
-    fn handle_key_package_publish(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+    fn handle_key_package_publish(
+        &mut self,
+        session_id: u64,
+        frame: &Frame,
+    ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
 
         let user_id = match self.registry.sessions(session_id) {
@@ -570,7 +583,11 @@ where
     }
 
     /// Handle KeyPackage fetch request.
-    fn handle_key_package_fetch(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+    fn handle_key_package_fetch(
+        &mut self,
+        session_id: u64,
+        frame: &Frame,
+    ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
 
         // Decode request
@@ -688,7 +705,11 @@ where
     /// When a client publishes GroupInfo at epoch 0, this indicates room
     /// creation. The server creates the room in RoomManager and subscribes
     /// the creator.
-    fn handle_group_info_publish(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+    fn handle_group_info_publish(
+        &mut self,
+        session_id: u64,
+        frame: &Frame,
+    ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -742,7 +763,11 @@ where
     }
 
     /// Handle GroupInfo request (fetch GroupInfo for external joiners).
-    fn handle_group_info_request(&mut self, session_id: u64, frame: &Frame) -> Vec<ServerAction> {
+    fn handle_group_info_request(
+        &mut self,
+        session_id: u64,
+        frame: &Frame,
+    ) -> Vec<ServerAction<E::Instant>> {
         use lockframe_proto::payloads::mls::GroupInfoPayload;
 
         let now = self.env.now();
@@ -868,7 +893,7 @@ where
         &mut self,
         session_id: u64,
         reason: &str,
-    ) -> Result<Vec<ServerAction>, ServerError> {
+    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -893,7 +918,7 @@ where
     }
 
     /// Handle periodic tick for timeout checking.
-    fn handle_tick(&mut self) -> Result<Vec<ServerAction>, ServerError> {
+    fn handle_tick(&mut self) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -922,9 +947,9 @@ where
     /// Convert a RoomAction to ServerActions.
     fn convert_room_action(
         &self,
-        room_action: RoomAction,
+        room_action: RoomAction<E::Instant>,
         sender_session_id: u64,
-    ) -> Vec<ServerAction> {
+    ) -> Vec<ServerAction<E::Instant>> {
         match room_action {
             RoomAction::Broadcast { room_id, frame, exclude_sender, .. } => {
                 if frame.header.opcode_enum() == Some(Opcode::Welcome) {
@@ -1000,7 +1025,7 @@ where
         &mut self,
         room_id: u128,
         creator_session_id: u64,
-    ) -> Result<Vec<ServerAction>, ServerError> {
+    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         let now = self.env.now();
 
         let info = self
@@ -1092,6 +1117,7 @@ mod tests {
     struct TestEnv {}
 
     impl Environment for TestEnv {
+        type Instant = std::time::Instant;
         fn now(&self) -> std::time::Instant {
             // Using real Instant for simplicity in unit tests
             std::time::Instant::now()
