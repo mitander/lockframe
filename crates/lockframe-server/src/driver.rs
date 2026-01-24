@@ -1108,34 +1108,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use lockframe_core::env::test_utils::MockEnv;
 
     use super::*;
     use crate::storage::MemoryStorage;
 
-    #[derive(Clone)]
-    struct TestEnv {}
-
-    impl Environment for TestEnv {
-        type Instant = std::time::Instant;
-        fn now(&self) -> std::time::Instant {
-            // Using real Instant for simplicity in unit tests
-            std::time::Instant::now()
-        }
-
-        fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-            async {}
-        }
-
-        fn random_bytes(&self, buffer: &mut [u8]) {
-            use rand::RngCore;
-            rand::thread_rng().fill_bytes(buffer);
-        }
-    }
-
     #[test]
     fn server_accepts_connection() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
@@ -1148,7 +1128,7 @@ mod tests {
 
     #[test]
     fn server_rejects_when_max_connections_exceeded() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let config = ServerConfig { max_connections: 2, ..Default::default() };
         let mut server = ServerDriver::new(env, storage, config);
@@ -1167,7 +1147,7 @@ mod tests {
 
     #[test]
     fn server_handles_connection_closed() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
@@ -1186,7 +1166,7 @@ mod tests {
 
     #[test]
     fn server_creates_room() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
@@ -1207,7 +1187,7 @@ mod tests {
 
     #[test]
     fn server_create_room_fails_for_unknown_session() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
@@ -1219,7 +1199,7 @@ mod tests {
 
     #[test]
     fn server_subscribe_and_unsubscribe() {
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 
@@ -1250,7 +1230,7 @@ mod tests {
         use bytes::Bytes;
         use lockframe_proto::FrameHeader;
 
-        let env = TestEnv {};
+        let env = MockEnv::with_crypto_rng();
         let storage = MemoryStorage::new();
         let mut server = ServerDriver::new(env, storage, ServerConfig::default());
 

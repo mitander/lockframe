@@ -6,38 +6,15 @@
 //! - Frame handling is consistent
 //! - No panics on arbitrary inputs
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use lockframe_core::{
     connection::{Connection, ConnectionAction, ConnectionConfig, ConnectionState},
-    env::Environment,
+    env::{Environment, test_utils::MockEnv},
     error::ConnectionError,
 };
 use lockframe_proto::{FrameHeader, Opcode, Payload, payloads::session::HelloReply};
 use proptest::prelude::*;
-
-// Minimal test environment
-#[derive(Clone)]
-struct TestEnv;
-
-impl Environment for TestEnv {
-    type Instant = Instant;
-
-    fn now(&self) -> Self::Instant {
-        Instant::now()
-    }
-
-    fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-        async {}
-    }
-
-    fn random_bytes(&self, buffer: &mut [u8]) {
-        // Deterministic for tests
-        for (i, byte) in buffer.iter_mut().enumerate() {
-            *byte = i as u8;
-        }
-    }
-}
 
 // Strategy for generating valid ConnectionConfigs
 fn config_strategy() -> impl Strategy<Value = ConnectionConfig> {
@@ -61,7 +38,7 @@ fn session_id_strategy() -> impl Strategy<Value = u64> {
 #[test]
 fn prop_send_hello_only_from_init() {
     proptest!(|(config in config_strategy())| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config);
 
@@ -79,7 +56,7 @@ fn prop_send_hello_only_from_init() {
 #[test]
 fn prop_state_never_goes_backward() {
     proptest!(|(config in config_strategy(), session_id in session_id_strategy())| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config);
 
@@ -109,7 +86,7 @@ fn prop_state_never_goes_backward() {
 
 #[test]
 fn handshake_timeout_no_response() {
-    let env = TestEnv;
+    let env = MockEnv::new();
     let now = env.now();
     let config = ConnectionConfig::default();
     let mut client = Connection::new(now, config);
@@ -136,7 +113,7 @@ fn handshake_timeout_no_response() {
 #[test]
 fn prop_timeout_always_closes() {
     proptest!(|(config in config_strategy())| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config.clone());
 
@@ -160,7 +137,7 @@ fn prop_idle_timeout_only_authenticated() {
         session_id in session_id_strategy(),
         advance in time_advance_strategy()
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
 
         // Test Init state - no timeout
@@ -201,7 +178,7 @@ fn prop_heartbeats_only_authenticated() {
         config in config_strategy(),
         session_id in session_id_strategy()
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
 
         // Test Init state - no heartbeat
@@ -261,7 +238,7 @@ fn prop_session_id_immutable() {
         session_id1 in session_id_strategy(),
         session_id2 in session_id_strategy()
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config);
 
@@ -303,7 +280,7 @@ fn prop_activity_resets_timeout() {
         advance1 in 1u64..=50,
         advance2 in 1u64..=50
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config.clone());
 
@@ -365,7 +342,7 @@ fn prop_closed_is_terminal() {
         config in config_strategy(),
         advance in time_advance_strategy()
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let now = env.now();
         let mut conn = Connection::new(now, config);
 
@@ -391,18 +368,22 @@ fn prop_closed_is_terminal() {
     });
 }
 
-/// Property: Session ID generation is deterministic with same Environment
+/// Property: Session ID generation is deterministic with same seeded
+/// Environment
 #[test]
 fn prop_session_id_deterministic_with_same_env() {
     proptest!(|(config in config_strategy())| {
         use lockframe_proto::payloads::session::Hello;
 
-        let env = TestEnv; // Deterministic TestEnv
-        let now = env.now();
+        // Create two environments with same seed for deterministic comparison
+        let env1 = MockEnv::new();
+        let env2 = MockEnv::new();
+        let now1 = env1.now();
+        let now2 = env2.now();
 
-        // Create two connections with same environment
-        let mut conn1 = Connection::new(now, config.clone());
-        let mut conn2 = Connection::new(now, config);
+        // Create two connections with separate but identically-seeded environments
+        let mut conn1 = Connection::new(now1, config.clone());
+        let mut conn2 = Connection::new(now2, config);
 
         // Create Hello message
         let hello = Hello {
@@ -412,11 +393,11 @@ fn prop_session_id_deterministic_with_same_env() {
             auth_token: None,
         };
 
-        // Handle Hello on both connections
-        let actions1 = conn1.handle_hello(&hello, &env, now).unwrap();
-        let actions2 = conn2.handle_hello(&hello, &env, now).unwrap();
+        // Handle Hello on both connections with their respective environments
+        let actions1 = conn1.handle_hello(&hello, &env1, now1).unwrap();
+        let actions2 = conn2.handle_hello(&hello, &env2, now2).unwrap();
 
-        // Both should have same session ID (deterministic RNG)
+        // Both should have same session ID (same seed = same sequence)
         assert_eq!(conn1.session_id(), conn2.session_id());
         assert!(conn1.session_id().is_some());
 

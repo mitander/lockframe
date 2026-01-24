@@ -1046,52 +1046,17 @@ fn deserialize_encrypted_message(data: &[u8]) -> Result<EncryptedMessage, String
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll},
-        time::Duration,
-    };
+    use std::time::Duration;
+
+    use lockframe_core::env::test_utils::MockEnv;
 
     use super::*;
 
-    struct ImmediateFuture;
-
-    impl Future for ImmediateFuture {
-        type Output = ();
-
-        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Poll::Ready(())
-        }
-    }
-
-    #[derive(Clone)]
-    struct TestEnv;
-
-    impl Environment for TestEnv {
-        type Instant = std::time::Instant;
-
-        fn now(&self) -> Self::Instant {
-            std::time::Instant::now()
-        }
-
-        fn sleep(&self, _duration: Duration) -> impl Future<Output = ()> + Send {
-            ImmediateFuture
-        }
-
-        fn random_bytes(&self, buffer: &mut [u8]) {
-            // Deterministic for tests
-            for (i, byte) in buffer.iter_mut().enumerate() {
-                *byte = i as u8;
-            }
-        }
-    }
-
     #[test]
     fn create_client() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
-        let client: Client<TestEnv> = Client::new(env, identity);
+        let client: Client<MockEnv> = Client::new(env, identity);
 
         assert_eq!(client.sender_id(), 42);
         assert_eq!(client.room_count(), 0);
@@ -1099,7 +1064,7 @@ mod tests {
 
     #[test]
     fn create_room() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1113,7 +1078,7 @@ mod tests {
 
     #[test]
     fn create_duplicate_room_fails() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1126,7 +1091,7 @@ mod tests {
 
     #[test]
     fn send_message_to_unknown_room_fails() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1140,7 +1105,7 @@ mod tests {
 
     #[test]
     fn leave_room() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1155,7 +1120,7 @@ mod tests {
 
     #[test]
     fn leave_unknown_room_fails() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1165,7 +1130,7 @@ mod tests {
 
     #[test]
     fn send_message_produces_encrypted_frame() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1192,7 +1157,7 @@ mod tests {
 
     #[test]
     fn app_message_with_invalid_signature_is_rejected() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1223,7 +1188,7 @@ mod tests {
         // For now, we test that encryption works and produces valid output,
         // and that the serialization roundtrips correctly.
 
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1255,7 +1220,7 @@ mod tests {
 
     #[test]
     fn pending_adds_timeout_cleanup() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1284,7 +1249,7 @@ mod tests {
 
     #[test]
     fn pending_adds_multiple_rooms_same_user() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1339,7 +1304,7 @@ mod tests {
 
     #[test]
     fn welcome_without_pending_keypackage_emits_keypackage_needed() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1366,7 +1331,7 @@ mod tests {
 
     #[test]
     fn welcome_with_wrong_keypackage_emits_keypackage_needed() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 
@@ -1395,7 +1360,7 @@ mod tests {
 
     #[test]
     fn welcome_to_existing_room_returns_error() {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
         let mut client = Client::new(env, identity);
 

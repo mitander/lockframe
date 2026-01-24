@@ -4,40 +4,13 @@
 //! - Pending commit is tracked after add_members/remove_members
 //! - Epoch advances after merge_pending_commit
 //! - Timeout detection works correctly
-//!
-//! Note: Full property-based testing of MLS operations is challenging because
-//! MLS crypto requires proper randomness. These tests use the existing TestEnv
-//! pattern with real randomness.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use lockframe_core::{
-    env::Environment,
+    env::{Environment, test_utils::MockEnv},
     mls::{MlsAction, MlsGroup},
 };
-
-/// Test environment using real randomness (required for MLS crypto).
-#[derive(Clone)]
-struct TestEnv;
-
-impl Environment for TestEnv {
-    type Instant = Instant;
-
-    fn now(&self) -> Self::Instant {
-        Instant::now()
-    }
-
-    fn sleep(&self, duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-        async move {
-            tokio::time::sleep(duration).await;
-        }
-    }
-
-    fn random_bytes(&self, buffer: &mut [u8]) {
-        use rand::RngCore;
-        rand::thread_rng().fill_bytes(buffer);
-    }
-}
 
 /// INVARIANT: After add_members, has_pending_commit returns true.
 ///
@@ -45,7 +18,7 @@ impl Environment for TestEnv {
 /// when adding members to a group.
 #[test]
 fn add_members_sets_pending_commit() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
     let new_member_id = 100u64;
@@ -80,7 +53,7 @@ fn add_members_sets_pending_commit() {
 /// INVARIANT: remove_members also sets pending commit.
 #[test]
 fn remove_members_sets_pending_commit() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
     let member_to_add = 100u64;
@@ -118,7 +91,7 @@ fn remove_members_sets_pending_commit() {
 /// increasing and each commit advances the epoch by exactly 1.
 #[test]
 fn merge_commit_advances_epoch_by_one() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
     let new_member_id = 100u64;
@@ -157,7 +130,7 @@ fn merge_commit_advances_epoch_by_one() {
 /// INVARIANT: Pending commit cleared after merge.
 #[test]
 fn pending_commit_cleared_after_merge() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
     let new_member_id = 100u64;
@@ -181,7 +154,7 @@ fn pending_commit_cleared_after_merge() {
 /// INVARIANT: Timeout detection works correctly.
 #[test]
 fn commit_timeout_detection() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
     let new_member_id = 100u64;
@@ -196,7 +169,7 @@ fn commit_timeout_detection() {
     // Should have pending commit
     assert!(group.has_pending_commit());
 
-    let now = Instant::now();
+    let now = env.now();
     let timeout = Duration::from_secs(30);
 
     // Should not be timed out immediately (within a small window)
@@ -209,7 +182,7 @@ fn commit_timeout_detection() {
 /// INVARIANT: Multiple sequential commits each advance epoch by 1.
 #[test]
 fn sequential_commits_advance_epoch_correctly() {
-    let env = TestEnv;
+    let env = MockEnv::with_crypto_rng();
     let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0_u128;
     let creator_id = 42u64;
 

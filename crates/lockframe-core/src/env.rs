@@ -65,3 +65,164 @@ pub trait Environment: Clone + Send + Sync + 'static {
         u128::from_be_bytes(bytes)
     }
 }
+
+/// Test utilities for deterministic testing.
+///
+/// This module provides mock implementations of the Environment trait
+/// for use in unit and integration tests across all lockframe crates.
+pub mod test_utils {
+    use std::{
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
+        time::Instant,
+    };
+
+    use rand::{RngCore, SeedableRng, rngs::StdRng};
+
+    use super::*;
+
+    /// Mock environment with controllable time for deterministic testing.
+    ///
+    /// Time starts at a fixed base instant and can be advanced manually via
+    /// `advance_time()`. This ensures tests are fully reproducible regardless
+    /// of when they run.
+    ///
+    /// Randomness is provided by a StdRng that is either:
+    /// - Seeded with a fixed value (deterministic mode)
+    /// - Seeded from OS entropy (crypto mode for MLS tests)
+    #[derive(Clone)]
+    pub struct MockEnv {
+        /// Base instant (fixed for determinism)
+        base: Instant,
+        /// Time offset from base in nanoseconds (atomic for Send+Sync)
+        offset_nanos: Arc<AtomicU64>,
+        /// RNG for random number generation
+        /// Mutex allows interior mutability while maintaining Send+Sync
+        rng: Arc<Mutex<StdRng>>,
+    }
+
+    impl MockEnv {
+        /// Create a new mock environment with deterministic randomness.
+        ///
+        /// Uses a fixed seed (0) for the RNG to ensure tests are reproducible.
+        pub fn new() -> Self {
+            let base = Instant::now();
+            let rng = StdRng::seed_from_u64(0);
+            Self { base, offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
+        }
+
+        /// Create a mock environment with real cryptographic randomness.
+        ///
+        /// Uses OS entropy to seed the RNG. Use this for tests involving MLS
+        /// or other crypto operations that need real randomness.
+        pub fn with_crypto_rng() -> Self {
+            let base = Instant::now();
+            let rng = StdRng::from_entropy();
+            Self { base, offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
+        }
+
+        /// Advance the mock clock by the given duration.
+        ///
+        /// This allows tests to simulate time passing without actual delays.
+        pub fn advance_time(&self, duration: Duration) {
+            self.offset_nanos.fetch_add(duration.as_nanos() as u64, Ordering::SeqCst);
+        }
+    }
+
+    impl Default for MockEnv {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Environment for MockEnv {
+        type Instant = Instant;
+
+        fn now(&self) -> Instant {
+            let nanos = self.offset_nanos.load(Ordering::SeqCst);
+            self.base + Duration::from_nanos(nanos)
+        }
+
+        fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
+            // Don't sleep, tests control time manually
+            async {}
+        }
+
+        fn random_bytes(&self, buffer: &mut [u8]) {
+            self.rng.lock().expect("MockEnv RNG mutex poisoned").fill_bytes(buffer);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn mock_env_rng_advances() {
+            let env = MockEnv::new();
+
+            // Generate several random values - should all be different
+            let val1 = env.random_u64();
+            let val2 = env.random_u64();
+            let val3 = env.random_u64();
+
+            assert_ne!(val1, val2, "RNG should advance between calls");
+            assert_ne!(val2, val3, "RNG should advance between calls");
+            assert_ne!(val1, val3, "RNG should advance between calls");
+        }
+
+        #[test]
+        fn mock_env_rng_deterministic() {
+            // Create two environments with same seed
+            let env1 = MockEnv::new();
+            let env2 = MockEnv::new();
+
+            // Should produce identical sequences
+            let val1_env1 = env1.random_u64();
+            let val2_env1 = env1.random_u64();
+            let val3_env1 = env1.random_u64();
+
+            let val1_env2 = env2.random_u64();
+            let val2_env2 = env2.random_u64();
+            let val3_env2 = env2.random_u64();
+
+            assert_eq!(val1_env1, val1_env2, "Same seed should produce same sequence");
+            assert_eq!(val2_env1, val2_env2, "Same seed should produce same sequence");
+            assert_eq!(val3_env1, val3_env2, "Same seed should produce same sequence");
+        }
+
+        #[test]
+        fn mock_env_time_advances() {
+            let env = MockEnv::new();
+            let t0 = env.now();
+
+            env.advance_time(Duration::from_secs(5));
+            let t1 = env.now();
+
+            assert_eq!(t1 - t0, Duration::from_secs(5));
+        }
+
+        #[test]
+        fn mock_env_crypto_rng_produces_random_bytes() {
+            let env = MockEnv::with_crypto_rng();
+
+            let val1 = env.random_u64();
+            let val2 = env.random_u64();
+
+            // Crypto RNG should produce different values
+            assert_ne!(val1, val2);
+
+            // Two separate crypto envs should produce different sequences
+            let env_a = MockEnv::with_crypto_rng();
+            let env_b = MockEnv::with_crypto_rng();
+
+            let a1 = env_a.random_u64();
+            let b1 = env_b.random_u64();
+
+            // Very unlikely to be equal with real randomness
+            assert_ne!(a1, b1);
+        }
+    }
+}

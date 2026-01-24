@@ -5,41 +5,16 @@
 //! 2. Client A fetches KeyPackage for user_id B
 //! 3. Server routes Welcome to B after A adds them
 
-use std::time::Duration;
-
 use bytes::Bytes;
-use lockframe_core::env::Environment;
+use lockframe_core::env::test_utils::MockEnv;
 use lockframe_proto::{
     Frame, FrameHeader, Opcode, Payload,
     payloads::mls::{KeyPackageFetchPayload, KeyPackagePublishRequest},
 };
 use lockframe_server::{DriverConfig, MemoryStorage, ServerAction, ServerDriver, ServerEvent};
 
-// Test environment using system time and RNG
-#[derive(Clone)]
-struct TestEnv;
-
-impl Environment for TestEnv {
-    type Instant = std::time::Instant;
-
-    fn now(&self) -> Self::Instant {
-        std::time::Instant::now()
-    }
-
-    fn sleep(&self, duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-        async move {
-            tokio::time::sleep(duration).await;
-        }
-    }
-
-    fn random_bytes(&self, buffer: &mut [u8]) {
-        use rand::RngCore;
-        rand::thread_rng().fill_bytes(buffer);
-    }
-}
-
-fn create_driver() -> ServerDriver<TestEnv, MemoryStorage> {
-    let env = TestEnv;
+fn create_driver() -> ServerDriver<MockEnv, MemoryStorage> {
+    let env = MockEnv::with_crypto_rng();
     let storage = MemoryStorage::new();
     let config = DriverConfig::default();
     ServerDriver::new(env, storage, config)

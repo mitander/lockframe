@@ -953,34 +953,14 @@ impl<E: Environment> MlsGroup<E> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use super::*;
-
-    #[derive(Clone)]
-    struct TestEnv;
-
-    impl Environment for TestEnv {
-        type Instant = std::time::Instant;
-        fn now(&self) -> Instant {
-            Instant::now()
-        }
-
-        fn sleep(&self, duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-            async move {
-                tokio::time::sleep(duration).await;
-            }
-        }
-
-        fn random_bytes(&self, buffer: &mut [u8]) {
-            use rand::RngCore;
-            rand::thread_rng().fill_bytes(buffer);
-        }
-    }
+    use crate::env::test_utils::MockEnv;
 
     #[test]
     fn create_group() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
         let member_id = 1;
 
@@ -1000,8 +980,8 @@ mod tests {
 
     #[test]
     fn commit_timeout_detection() {
-        let env = TestEnv;
-        let now = Instant::now();
+        let env = MockEnv::with_crypto_rng();
+        let now = env.now();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
         let member_id = 1;
 
@@ -1029,7 +1009,7 @@ mod tests {
     /// DeliverMessage.
     #[test]
     fn process_message_returns_correct_sender() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Alice creates the group
@@ -1101,7 +1081,7 @@ mod tests {
     /// Test that add_members returns the correct recipient in SendWelcome.
     #[test]
     fn add_members_returns_correct_welcome_recipient() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Alice creates the group
@@ -1137,7 +1117,7 @@ mod tests {
     /// member.
     #[test]
     fn remove_members_produces_commit() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Alice creates the group
@@ -1189,7 +1169,7 @@ mod tests {
     /// Test that remove_members rejects removing self.
     #[test]
     fn remove_members_rejects_self_removal() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         let alice_id = 42u64;
@@ -1208,7 +1188,7 @@ mod tests {
     /// Test that remove_members rejects unknown member.
     #[test]
     fn remove_members_rejects_unknown_member() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         let alice_id = 42u64;
@@ -1227,7 +1207,7 @@ mod tests {
     /// Test leave_group produces correct actions.
     #[test]
     fn leave_group_produces_commit_and_remove_action() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Alice creates the group
@@ -1281,7 +1261,7 @@ mod tests {
     /// exported GroupInfo, without requiring a Welcome message.
     #[test]
     fn join_from_external_creates_commit() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Alice creates the group
@@ -1319,7 +1299,7 @@ mod tests {
     /// Test that external commit fails with invalid GroupInfo.
     #[test]
     fn join_from_external_rejects_invalid_group_info() {
-        let env = TestEnv;
+        let env = MockEnv::with_crypto_rng();
         let room_id = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
         // Try to join with garbage GroupInfo

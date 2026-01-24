@@ -6,38 +6,15 @@
 //! - Timeouts are properly detected
 //! - Connection eventually closes on errors
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use lockframe_core::{
     connection::{Connection, ConnectionConfig, ConnectionState},
-    env::Environment,
+    env::{Environment, test_utils::MockEnv},
 };
 use lockframe_proto::{Frame, FrameHeader, Opcode};
 use proptest::prelude::*;
-
-// Minimal test environment
-#[derive(Clone)]
-struct TestEnv;
-
-impl Environment for TestEnv {
-    type Instant = Instant;
-
-    fn now(&self) -> Self::Instant {
-        Instant::now()
-    }
-
-    fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
-        async {}
-    }
-
-    fn random_bytes(&self, buffer: &mut [u8]) {
-        // Deterministic for tests
-        for (i, byte) in buffer.iter_mut().enumerate() {
-            *byte = i as u8;
-        }
-    }
-}
 
 /// Strategy for generating arbitrary opcodes
 fn arbitrary_opcode() -> impl Strategy<Value = Opcode> {
@@ -85,7 +62,7 @@ fn prop_connection_never_panics_on_invalid_frames() {
     proptest!(|(
         opcode in arbitrary_opcode(),
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let t0 = env.now();
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);
@@ -93,7 +70,7 @@ fn prop_connection_never_panics_on_invalid_frames() {
         let frame = create_frame_for_opcode(opcode);
 
         // Process frame - should never panic
-        let _ = conn.handle_frame(&frame, Instant::now());
+        let _ = conn.handle_frame(&frame, t0);
 
         // Connection should remain in valid state
         prop_assert!(
@@ -114,7 +91,7 @@ fn prop_connection_state_transitions_valid() {
     proptest!(|(
         opcodes in prop::collection::vec(arbitrary_opcode(), 1..20),
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let t0 = env.now();
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);
@@ -159,7 +136,7 @@ fn prop_connection_closed_stays_closed() {
     proptest!(|(
         opcodes in prop::collection::vec(arbitrary_opcode(), 1..20),
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let t0 = env.now();
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);
@@ -193,7 +170,7 @@ fn prop_connection_tick_monotonic_time() {
     proptest!(|(
         time_deltas in prop::collection::vec(1u64..1000, 1..50),
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let t0 = env.now();
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);
@@ -226,7 +203,7 @@ fn prop_connection_tick_linear_complexity() {
     proptest!(|(
         tick_count in 10usize..200,
     )| {
-        let env = TestEnv;
+        let env = MockEnv::new();
         let t0 = env.now();
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);

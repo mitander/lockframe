@@ -177,56 +177,20 @@ impl<E: Environment> Bridge<E> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll},
-        time::Duration,
-    };
-
-    use lockframe_core::env::Environment;
+    use lockframe_core::env::test_utils::MockEnv;
 
     use super::*;
 
-    struct ImmediateFuture;
-
-    impl Future for ImmediateFuture {
-        type Output = ();
-        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Poll::Ready(())
-        }
-    }
-
-    #[derive(Clone)]
-    struct TestEnv;
-
-    impl Environment for TestEnv {
-        type Instant = std::time::Instant;
-        fn now(&self) -> std::time::Instant {
-            std::time::Instant::now()
-        }
-
-        fn sleep(&self, _duration: Duration) -> impl Future<Output = ()> + Send {
-            ImmediateFuture
-        }
-
-        fn random_bytes(&self, buffer: &mut [u8]) {
-            for (i, byte) in buffer.iter_mut().enumerate() {
-                *byte = i as u8;
-            }
-        }
-    }
-
     #[test]
     fn create_room_produces_room_joined() {
-        let mut bridge: Bridge<TestEnv> = Bridge::new(TestEnv, 42);
+        let mut bridge: Bridge<MockEnv> = Bridge::new(MockEnv::new(), 42);
         let events = bridge.process_app_action(AppAction::CreateRoom { room_id: 1 });
         assert!(events.iter().any(|e| matches!(e, AppEvent::RoomJoined { room_id: 1 })));
     }
 
     #[test]
     fn send_message_produces_outgoing_frame() {
-        let mut bridge: Bridge<TestEnv> = Bridge::new(TestEnv, 42);
+        let mut bridge: Bridge<MockEnv> = Bridge::new(MockEnv::new(), 42);
         let _ = bridge.process_app_action(AppAction::CreateRoom { room_id: 1 });
         let _ = bridge.take_outgoing();
 
@@ -238,7 +202,7 @@ mod tests {
 
     #[test]
     fn send_to_unknown_room_produces_error() {
-        let mut bridge: Bridge<TestEnv> = Bridge::new(TestEnv, 42);
+        let mut bridge: Bridge<MockEnv> = Bridge::new(MockEnv::new(), 42);
         let events = bridge.process_app_action(AppAction::SendMessage {
             room_id: 999,
             content: b"hello".to_vec(),
