@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use super::{Invariant, InvariantResult, SystemSnapshot, Violation};
+use super::{Invariant, InvariantKind, InvariantResult, SystemSnapshot, Violation};
 
 /// Active room must exist in rooms map.
 ///
@@ -14,8 +14,8 @@ use super::{Invariant, InvariantResult, SystemSnapshot, Violation};
 pub struct ActiveRoomInRooms;
 
 impl Invariant for ActiveRoomInRooms {
-    fn name(&self) -> &'static str {
-        "active_room_in_rooms"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::ActiveRoomInRooms
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -23,7 +23,7 @@ impl Invariant for ActiveRoomInRooms {
             if let Some(active) = client.active_room {
                 if !client.rooms.contains_key(&active) {
                     return Err(Violation {
-                        invariant: self.name(),
+                        invariant: self.kind(),
                         message: format!(
                             "client {}: active_room {} not in rooms {:?}",
                             client.id,
@@ -45,8 +45,8 @@ impl Invariant for ActiveRoomInRooms {
 pub struct EpochMonotonicity;
 
 impl Invariant for EpochMonotonicity {
-    fn name(&self) -> &'static str {
-        "epoch_monotonicity"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::EpochMonotonicity
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -55,7 +55,7 @@ impl Invariant for EpochMonotonicity {
                 for window in history.windows(2) {
                     if window[1] < window[0] {
                         return Err(Violation {
-                            invariant: self.name(),
+                            invariant: self.kind(),
                             message: format!(
                                 "client {} room {}: epoch decreased {} → {}",
                                 client.id, room_id, window[0], window[1]
@@ -76,8 +76,8 @@ impl Invariant for EpochMonotonicity {
 pub struct MembershipConsistency;
 
 impl Invariant for MembershipConsistency {
-    fn name(&self) -> &'static str {
-        "membership_consistency"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::MembershipConsistency
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -103,7 +103,7 @@ impl Invariant for MembershipConsistency {
             for (client_id, members) in &clients[1..] {
                 if members != first_members {
                     return Err(Violation {
-                        invariant: self.name(),
+                        invariant: self.kind(),
                         message: format!(
                             "room {} epoch {}: client {} sees members {:?}, client {} sees {:?}",
                             room_id, epoch, clients[0].0, first_members, client_id, members
@@ -123,8 +123,8 @@ impl Invariant for MembershipConsistency {
 pub struct TreeHashConvergence;
 
 impl Invariant for TreeHashConvergence {
-    fn name(&self) -> &'static str {
-        "tree_hash_convergence"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::TreeHashConvergence
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -144,7 +144,7 @@ impl Invariant for TreeHashConvergence {
             let unique_hashes: HashSet<_> = clients.iter().map(|(_, h)| h).collect();
             if unique_hashes.len() > 1 {
                 return Err(Violation {
-                    invariant: self.name(),
+                    invariant: self.kind(),
                     message: format!(
                         "room {} epoch {}: {} distinct tree hashes among {} clients",
                         room_id,
@@ -167,8 +167,8 @@ impl Invariant for TreeHashConvergence {
 pub struct NoLogGaps;
 
 impl Invariant for NoLogGaps {
-    fn name(&self) -> &'static str {
-        "no_log_gaps"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::NoLogGaps
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -184,7 +184,7 @@ impl Invariant for NoLogGaps {
                 for (i, &idx) in sorted.iter().enumerate() {
                     if idx != i as u64 {
                         return Err(Violation {
-                            invariant: self.name(),
+                            invariant: self.kind(),
                             message: format!(
                                 "client {} room {}: gap at position {}, expected {}, got {}",
                                 client.id, room_id, i, i, idx
@@ -206,8 +206,8 @@ impl Invariant for NoLogGaps {
 pub struct TotalOrdering;
 
 impl Invariant for TotalOrdering {
-    fn name(&self) -> &'static str {
-        "total_ordering"
+    fn kind(&self) -> InvariantKind {
+        InvariantKind::TotalOrdering
     }
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
@@ -252,7 +252,7 @@ impl Invariant for TotalOrdering {
 
                 if client_common_order != first_common_order {
                     return Err(Violation {
-                        invariant: self.name(),
+                        invariant: self.kind(),
                         message: format!(
                             "room {}: client {} sees order {:?}, client {} sees {:?}",
                             room_id,

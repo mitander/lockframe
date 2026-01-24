@@ -28,9 +28,9 @@ pub mod sim_server;
 pub mod sim_transport;
 
 pub use invariants::{
-    ActiveRoomInRooms, ClientSnapshot, EpochMonotonicity, Invariant, InvariantRegistry,
-    InvariantResult, MembershipConsistency, RoomSnapshot, SystemSnapshot, TreeHashConvergence,
-    Violation,
+    ActiveRoomInRooms, ClientSnapshot, EpochMonotonicity, Invariant, InvariantKind,
+    InvariantRegistry, InvariantResult, MembershipConsistency, RoomSnapshot, SystemSnapshot,
+    TreeHashConvergence, Violation,
 };
 pub use model::{
     ClientId, ErrorProperties, ModelClient, ModelMessage, ModelRoomId, ModelServer, ModelWorld,

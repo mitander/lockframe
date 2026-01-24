@@ -4,7 +4,9 @@
 //! This ensures behavioral correctness across all possible execution paths.
 
 use lockframe_app::{App, AppAction, AppEvent, Bridge};
-use lockframe_harness::{ClientSnapshot, InvariantRegistry, RoomSnapshot, SimEnv, SystemSnapshot};
+use lockframe_harness::{
+    ClientSnapshot, InvariantKind, InvariantRegistry, RoomSnapshot, SimEnv, SystemSnapshot,
+};
 use proptest::prelude::*;
 
 /// Generate random app events.
@@ -141,7 +143,7 @@ fn test_invariant_violation_detected() {
     assert!(result.is_err());
 
     let violations = result.unwrap_err();
-    assert!(violations.iter().any(|v| v.invariant == "active_room_in_rooms"));
+    assert!(violations.iter().any(|v| v.invariant == InvariantKind::ActiveRoomInRooms));
 }
 
 #[test]
@@ -157,7 +159,7 @@ fn test_epoch_monotonicity_violation_detected() {
     assert!(result.is_err());
 
     let violations = result.unwrap_err();
-    assert!(violations.iter().any(|v| v.invariant == "epoch_monotonicity"));
+    assert!(violations.iter().any(|v| v.invariant == InvariantKind::EpochMonotonicity));
 }
 
 #[test]

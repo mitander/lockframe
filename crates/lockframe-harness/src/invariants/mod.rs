@@ -9,14 +9,6 @@
 //! The invariant system extracts observable state from App and Bridge into
 //! a [`SystemSnapshot`], then runs registered [`Invariant`] checks against it.
 //! Violations trigger panics with detailed context for debugging.
-//!
-//! # Usage
-//!
-//! ```ignore
-//! let registry = InvariantRegistry::standard();
-//! let snapshot = SystemSnapshot::from_app(&app);
-//! registry.check_all(&snapshot)?;
-//! ```
 
 mod checks;
 mod snapshot;
@@ -30,11 +22,48 @@ pub use snapshot::{ClientSnapshot, RoomSnapshot, SystemSnapshot};
 /// Invariant check result.
 pub type InvariantResult = Result<(), Violation>;
 
+/// Enumeration of all invariants that can be violated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InvariantKind {
+    /// Active room must exist in rooms map.
+    ActiveRoomInRooms,
+    /// Epochs must never decrease within a client's history.
+    EpochMonotonicity,
+    /// Members of the same room at the same epoch must agree on membership.
+    MembershipConsistency,
+    /// Tree hashes must converge at the same epoch.
+    TreeHashConvergence,
+    /// Log indices must have no gaps.
+    NoLogGaps,
+    /// All clients must observe the same total ordering of messages.
+    TotalOrdering,
+}
+
+impl InvariantKind {
+    /// Human-readable name of the invariant.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ActiveRoomInRooms => "active_room_in_rooms",
+            Self::EpochMonotonicity => "epoch_monotonicity",
+            Self::MembershipConsistency => "membership_consistency",
+            Self::TreeHashConvergence => "tree_hash_convergence",
+            Self::NoLogGaps => "no_log_gaps",
+            Self::TotalOrdering => "total_ordering",
+        }
+    }
+}
+
+impl std::fmt::Display for InvariantKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Invariant violation with context.
 #[derive(Debug, Clone)]
 pub struct Violation {
-    /// Name of the violated invariant.
-    pub invariant: &'static str,
+    /// Kind of invariant that was violated.
+    pub invariant: InvariantKind,
     /// Description of what went wrong.
     pub message: String,
 }
@@ -52,8 +81,8 @@ impl std::error::Error for Violation {}
 /// Invariants are behavioral properties that must always hold.
 /// They capture WHAT must be true, not specific test scenarios.
 pub trait Invariant: Send + Sync {
-    /// Invariant name for error reporting.
-    fn name(&self) -> &'static str;
+    /// Invariant kind for error reporting.
+    fn kind(&self) -> InvariantKind;
 
     /// Check the invariant against the current state.
     ///
