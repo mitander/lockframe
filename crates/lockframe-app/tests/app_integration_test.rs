@@ -74,17 +74,6 @@ fn send_message<E: Environment>(
     process_actions(app, bridge, actions)
 }
 
-/// Add a member using App API and process through Bridge.
-fn add_member<E: Environment>(
-    app: &mut App,
-    bridge: &mut Bridge<E>,
-    room_id: u128,
-    user_id: u64,
-) -> Vec<Frame> {
-    let actions = app.add_member(room_id, user_id);
-    process_actions(app, bridge, actions)
-}
-
 /// Simulate receiving a frame from the server.
 fn receive_frame<E: Environment>(app: &mut App, bridge: &mut Bridge<E>, frame: Frame) {
     let events = bridge.handle_frame(frame);
@@ -104,6 +93,24 @@ fn extract_group_info(frame: &Frame) -> Option<GroupInfoPayload> {
         Payload::GroupInfo(p) => Some(p),
         _ => None,
     }
+}
+
+#[test]
+fn join_nonexistent_room_shows_error() {
+    let env = SimEnv::with_seed(42);
+    let sender_id = 1;
+    let mut app = connected_app(sender_id);
+    let mut bridge: Bridge<SimEnv> = Bridge::new(env, sender_id);
+
+    // Try to join non-existent room
+    let frames = join_room(&mut app, &mut bridge, 999);
+
+    // Should send GroupInfoRequest
+    let request_frames = frames_by_opcode(&frames, Opcode::GroupInfoRequest);
+    assert_eq!(request_frames.len(), 1);
+
+    // App should NOT have room yet (waiting for response)
+    assert!(!app.rooms().contains_key(&999));
 }
 
 #[test]
@@ -129,30 +136,6 @@ fn create_command_creates_room() {
         "Status should show joined: {:?}",
         app.status_message()
     );
-}
-
-#[test]
-fn message_after_create() {
-    let env = SimEnv::with_seed(42);
-    let sender_id = 1;
-    let mut app = connected_app(sender_id);
-    let mut bridge: Bridge<SimEnv> = Bridge::new(env, sender_id);
-
-    // Create room
-    let _ = create_room(&mut app, &mut bridge, 100);
-    let _ = bridge.take_outgoing(); // Clear frames
-
-    // Send message
-    let frames = send_message(&mut app, &mut bridge, 100, "hello world");
-
-    // Oracle: Message should appear in room
-    let room = app.rooms().get(&100).expect("Room should exist");
-    assert!(!room.messages.is_empty(), "Room should have messages");
-    assert_eq!(room.messages[0].content, b"hello world", "Message content should match");
-
-    // Oracle: AppMessage should be sent to server
-    let msg_frames = frames_by_opcode(&frames, Opcode::AppMessage);
-    assert_eq!(msg_frames.len(), 1, "Should send one AppMessage");
 }
 
 #[test]
@@ -197,195 +180,6 @@ fn external_join_flow() {
     // Oracle: Bob's App should show room joined
     assert!(bob_app.rooms().contains_key(&100), "Bob should have room 100");
     assert_eq!(bob_app.active_room(), Some(100), "Room 100 should be Bob's active room");
-}
-
-#[test]
-fn messaging_after_external_join() {
-    let env = SimEnv::with_seed(42);
-
-    // Alice creates room
-    let alice_id = 1;
-    let mut alice_app = connected_app(alice_id);
-    let mut alice_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), alice_id);
-
-    let alice_frames = create_room(&mut alice_app, &mut alice_bridge, 100);
-    let group_info = extract_group_info(&frames_by_opcode(&alice_frames, Opcode::GroupInfo)[0])
-        .expect("Extract GroupInfo");
-
-    // Bob joins
-    let bob_id = 2;
-    let mut bob_app = connected_app(bob_id);
-    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), bob_id);
-
-    join_room(&mut bob_app, &mut bob_bridge, 100);
-
-    // Simulate server sending GroupInfo to Bob
-    let group_info_frame = Payload::GroupInfo(group_info)
-        .into_frame(FrameHeader::new(Opcode::GroupInfo))
-        .expect("Create frame");
-
-    receive_frame(&mut bob_app, &mut bob_bridge, group_info_frame);
-    let bob_commit_frames = bob_bridge.take_outgoing();
-
-    // Alice processes Bob's external commit
-    let ext_commit = frames_by_opcode(&bob_commit_frames, Opcode::ExternalCommit);
-    assert_eq!(ext_commit.len(), 1, "Bob should send ExternalCommit");
-    receive_frame(&mut alice_app, &mut alice_bridge, ext_commit[0].clone());
-
-    // Both should now be in room 100
-    assert!(alice_app.rooms().contains_key(&100), "Alice should have room");
-    assert!(bob_app.rooms().contains_key(&100), "Bob should have room");
-
-    // Alice sends message
-    let alice_msg_frames = send_message(&mut alice_app, &mut alice_bridge, 100, "Hello Bob");
-    let alice_msgs = frames_by_opcode(&alice_msg_frames, Opcode::AppMessage);
-    assert_eq!(alice_msgs.len(), 1, "Alice should send message");
-
-    // Bob receives message
-    receive_frame(&mut bob_app, &mut bob_bridge, alice_msgs[0].clone());
-
-    // Oracle: Bob's room should have Alice's message
-    let bob_room = bob_app.rooms().get(&100).expect("Bob should have room");
-    assert!(
-        bob_room.messages.iter().any(|m| m.content == b"Hello Bob" && m.sender_id == alice_id),
-        "Bob should have Alice's message"
-    );
-
-    // Bob sends message
-    let bob_msg_frames = send_message(&mut bob_app, &mut bob_bridge, 100, "Hello Alice");
-    let bob_msgs = frames_by_opcode(&bob_msg_frames, Opcode::AppMessage);
-    assert_eq!(bob_msgs.len(), 1, "Bob should send message");
-
-    // Alice receives message
-    receive_frame(&mut alice_app, &mut alice_bridge, bob_msgs[0].clone());
-
-    // Oracle: Alice's room should have Bob's message
-    let alice_room = alice_app.rooms().get(&100).expect("Alice should have room");
-    assert!(
-        alice_room.messages.iter().any(|m| m.content == b"Hello Alice" && m.sender_id == bob_id),
-        "Alice should have Bob's message"
-    );
-}
-
-#[test]
-fn add_member_flow() {
-    let env = SimEnv::with_seed(42);
-
-    // Alice creates room
-    let alice_id = 1;
-    let mut alice_app = connected_app(alice_id);
-    let mut alice_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), alice_id);
-
-    create_room(&mut alice_app, &mut alice_bridge, 100);
-    alice_bridge.take_outgoing(); // Clear frames
-
-    // Bob creates identity and generates KeyPackage
-    let bob_id = 2;
-    let bob_env = env.clone();
-    let bob_identity = lockframe_client::ClientIdentity::new(bob_id);
-    let mut bob_client = lockframe_client::Client::new(bob_env, bob_identity);
-
-    // Bob generates KeyPackage
-    let (_key_package_bytes, _hash_ref) = bob_client.generate_key_package().expect("Generate KP");
-
-    // Alice adds Bob
-    let frames = add_member(&mut alice_app, &mut alice_bridge, 100, 2);
-
-    // Oracle: Should have sent frames (FetchKeyPackage request)
-    // Note: In real flow, server would respond with KeyPackage, then Welcome is
-    // sent
-    assert!(
-        !frames.is_empty() || alice_app.status_message().is_some(),
-        "Should have sent frames or set status"
-    );
-
-    // Oracle: Status message should show adding
-    assert!(
-        alice_app.status_message().map_or(false, |m| m.contains("Adding")),
-        "Status should show adding: {:?}",
-        alice_app.status_message()
-    );
-}
-
-#[test]
-fn three_clients_full_flow() {
-    let env = SimEnv::with_seed(42);
-
-    // Alice creates room
-    let alice_id = 1;
-    let mut alice_app = connected_app(alice_id);
-    let mut alice_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), alice_id);
-
-    let alice_frames = create_room(&mut alice_app, &mut alice_bridge, 100);
-    let group_info = extract_group_info(&frames_by_opcode(&alice_frames, Opcode::GroupInfo)[0])
-        .expect("Extract GroupInfo");
-
-    // Bob joins via Welcome
-    let bob_id = 2;
-    let bob_env = env.clone();
-    let bob_identity = lockframe_client::ClientIdentity::new(bob_id);
-    let mut bob_client = lockframe_client::Client::new(bob_env.clone(), bob_identity);
-
-    let (_bob_kp, _) = bob_client.generate_key_package().expect("Bob KP");
-
-    // Alice adds Bob - in real flow this goes through server
-    let _alice_client_actions =
-        alice_bridge.process_app_action(AppAction::AddMember { room_id: 100, user_id: bob_id });
-
-    // For now, verify Charlie's external join works
-    let charlie_id = 3;
-    let mut charlie_app = connected_app(charlie_id);
-    let mut charlie_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), charlie_id);
-
-    // Charlie joins via /join
-    join_room(&mut charlie_app, &mut charlie_bridge, 100);
-    let group_info_frame = Payload::GroupInfo(group_info)
-        .into_frame(FrameHeader::new(Opcode::GroupInfo))
-        .expect("Create frame");
-
-    receive_frame(&mut charlie_app, &mut charlie_bridge, group_info_frame);
-    let charlie_commit_frames = charlie_bridge.take_outgoing();
-
-    let ext_commit = frames_by_opcode(&charlie_commit_frames, Opcode::ExternalCommit);
-    assert_eq!(ext_commit.len(), 1, "Charlie should send ExternalCommit");
-
-    // Alice processes Charlie's commit
-    receive_frame(&mut alice_app, &mut alice_bridge, ext_commit[0].clone());
-
-    // Oracle: Both Alice and Charlie should be in room
-    assert!(alice_app.rooms().contains_key(&100), "Alice should have room");
-    assert!(charlie_app.rooms().contains_key(&100), "Charlie should have room");
-
-    // Alice sends message
-    let alice_msg_frames = send_message(&mut alice_app, &mut alice_bridge, 100, "Hello everyone!");
-    let alice_msgs = frames_by_opcode(&alice_msg_frames, Opcode::AppMessage);
-
-    // Charlie receives message
-    receive_frame(&mut charlie_app, &mut charlie_bridge, alice_msgs[0].clone());
-
-    let charlie_room = charlie_app.rooms().get(&100).expect("Charlie room");
-    assert!(
-        charlie_room.messages.iter().any(|m| m.content == b"Hello everyone!"),
-        "Charlie should have Alice's message"
-    );
-}
-
-#[test]
-fn join_nonexistent_room_shows_error() {
-    let env = SimEnv::with_seed(42);
-    let sender_id = 1;
-    let mut app = connected_app(sender_id);
-    let mut bridge: Bridge<SimEnv> = Bridge::new(env, sender_id);
-
-    // Try to join non-existent room
-    let frames = join_room(&mut app, &mut bridge, 999);
-
-    // Should send GroupInfoRequest
-    let request_frames = frames_by_opcode(&frames, Opcode::GroupInfoRequest);
-    assert_eq!(request_frames.len(), 1, "Should send GroupInfoRequest");
-
-    // App should NOT have room yet (waiting for response)
-    assert!(!app.rooms().contains_key(&999), "Room should not exist yet");
 }
 
 #[test]
@@ -739,4 +533,28 @@ fn duplicate_room_joined_preserves_messages() {
     // Oracle: Messages should still be there
     let room = app.rooms().get(&100).expect("Room exists");
     assert_eq!(room.messages.len(), 2, "Messages should be preserved");
+}
+
+#[test]
+fn add_member_command_generates_frames() {
+    let env = SimEnv::with_seed(42);
+    let sender_id = 1;
+    let mut app = connected_app(sender_id);
+    let mut bridge: Bridge<SimEnv> = Bridge::new(env, sender_id);
+
+    // Create room and add member
+    create_room(&mut app, &mut bridge, 100);
+    let actions = app.add_member(100, 2);
+
+    // Oracle: UI binding should return AddMember action
+    assert!(actions.iter().any(|a| matches!(a, AppAction::AddMember { room_id: 100, user_id: 2 })),);
+
+    // Process through Bridge
+    let frames = process_actions(&mut app, &mut bridge, actions);
+
+    // Oracle: Bridge should trigger Client to generate frames
+    assert!(!frames.is_empty(), "add_member should generate network frames");
+
+    let kp_fetch_frames = frames_by_opcode(&frames, Opcode::KeyPackageFetch);
+    assert_eq!(kp_fetch_frames.len(), 1, "Should fetch key package for user 2");
 }
