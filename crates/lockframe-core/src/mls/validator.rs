@@ -154,7 +154,7 @@ mod tests {
     }
 
     fn create_test_state(epoch: u64, members: Vec<u64>) -> MlsGroupState {
-        MlsGroupState::new(100, epoch, [0u8; 32], members, vec![])
+        MlsGroupState::new(100, epoch, [0u8; 32], members)
     }
 
     fn create_signed_frame_and_state(
@@ -184,7 +184,7 @@ mod tests {
         header.set_signature(signature.to_bytes());
         let frame = Frame::new(header, Bytes::new());
 
-        let state = MlsGroupState::with_keys(100, epoch, [0u8; 32], members, member_keys, vec![]);
+        let state = MlsGroupState::with_keys(100, epoch, [0u8; 32], members, member_keys);
 
         (frame, state)
     }
@@ -264,8 +264,7 @@ mod tests {
             signing_keys.insert(member, signing_key);
         }
 
-        let state =
-            MlsGroupState::with_keys(100, epoch, [0u8; 32], members.clone(), member_keys, vec![]);
+        let state = MlsGroupState::with_keys(100, epoch, [0u8; 32], members.clone(), member_keys);
 
         for sender in members {
             // Create and sign a frame for each sender
@@ -331,7 +330,7 @@ mod tests {
         // Create state with the public key
         let mut member_keys = HashMap::new();
         member_keys.insert(100, verifying_key.to_bytes());
-        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys, vec![]);
+        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
         let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
         assert_eq!(result, ValidationResult::Accept);
@@ -361,7 +360,7 @@ mod tests {
         // Create state with the WRONG public key
         let mut member_keys = HashMap::new();
         member_keys.insert(100, wrong_verifying_key.to_bytes());
-        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys, vec![]);
+        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
         let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
 
@@ -423,7 +422,7 @@ mod tests {
         // State has the wrong key
         let mut member_keys = HashMap::new();
         member_keys.insert(100, wrong_verifying_key.to_bytes());
-        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys, vec![]);
+        let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
         let result = MlsValidator::validate_signature(&frame, &state).expect("validation failed");
 

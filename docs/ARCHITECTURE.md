@@ -107,16 +107,30 @@ This gives us reproducable:
 │  └─────────────┘  └─────────────┘  └─────────────┘  │
 │         ↓                ↓                ↓         │
 │  ┌───────────────────────────────────────────────┐  │
-│  │            MLS State Machine (Shared)         │  │
+│  │         MLS Validator (Metadata Only)         │  │
+│  │   epoch | tree_hash | members | member_keys   │  │
 │  └───────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
 ```
 
+**Note:** The server does NOT perform MLS cryptographic operations. It stores
+lightweight validation metadata (epoch, tree hash, member list, public keys)
+to validate and sequence frames. All MLS key material lives on clients only.
+
 ### 2.2 Storage Architecture
 
-#### Server Storage (Hybrid Strategy)
+#### Server Storage (Redb)
 
-**State Store (Redb):** Stores persistent, non-sensitive structure (MLS Tree, Member Lists, Headers). Uses Copy-on-Write for crash safety.
+**Validation Metadata:** Stores lightweight MLS metadata for frame validation
+(epoch, tree hash, member IDs, member public keys). Does NOT store MLS
+cryptographic secrets - those live only on clients.
+
+**Frame Log:** Append-only log of sequenced frames per room.
+
+**GroupInfo:** Cached GroupInfo for external joiners (so new clients can
+create external commits without contacting existing members).
+
+Uses Copy-on-Write for crash safety.
 
 Redb provides ACID guarantees with deterministic page management:
 

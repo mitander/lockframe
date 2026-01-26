@@ -29,7 +29,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use libfuzzer_sys::fuzz_target;
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::{Frame, FrameHeader, Opcode};
-use lockframe_server::{storage::MemoryStorage, RoomAction, RoomManager, Storage, SystemEnv};
+use lockframe_server::{RoomAction, RoomManager, Storage, SystemEnv, storage::MemoryStorage};
 
 #[derive(Debug, Clone, Arbitrary)]
 struct RoomScenario {
@@ -102,7 +102,6 @@ fuzz_target!(|scenario: RoomScenario| {
         [0u8; 32],
         member_ids.clone(),
         member_verifying_keys.clone(),
-        vec![],
     );
 
     if storage.store_mls_state(room_id, &initial_mls_state).is_err() {
@@ -136,7 +135,7 @@ fuzz_target!(|scenario: RoomScenario| {
                 if let Ok(Some(mls_state)) = storage.load_mls_state(room_id) {
                     current_epoch = mls_state.epoch;
                 }
-            }
+            },
             Err(_) => {
                 if let Ok(Some(mls_state)) = storage.load_mls_state(room_id) {
                     current_epoch = mls_state.epoch;
@@ -146,7 +145,7 @@ fuzz_target!(|scenario: RoomScenario| {
                         assert_eq!(latest, expected_log_index - 1);
                     }
                 }
-            }
+            },
         }
     }
 
@@ -165,7 +164,7 @@ fn create_frame_from_attack(
             let sender_id = members[(*member_idx as usize) % members.len()];
             let signing_key = member_keys.get(&sender_id).expect("member key must exist");
             create_signed_frame(signing_key, sender_id, epoch, room_id, Opcode::AppMessage)
-        }
+        },
 
         FrameAttack::FromNonMember { fake_sender_id } => {
             let mut header = FrameHeader::new(Opcode::AppMessage);
@@ -174,7 +173,7 @@ fn create_frame_from_attack(
             header.set_room_id(room_id);
             header.set_signature([0xAA; 64]);
             Frame::new(header, Bytes::new())
-        }
+        },
 
         FrameAttack::WrongEpoch { member_idx, epoch_offset } => {
             let sender_id = members[(*member_idx as usize) % members.len()];
@@ -185,19 +184,20 @@ fn create_frame_from_attack(
                 epoch.saturating_add(*epoch_offset as u64)
             };
             create_signed_frame(signing_key, sender_id, wrong_epoch, room_id, Opcode::AppMessage)
-        }
+        },
 
         FrameAttack::InvalidOpcode { member_idx, opcode } => {
             let sender_id = members[(*member_idx as usize) % members.len()];
             let signing_key = member_keys.get(&sender_id).expect("member key must exist");
             let opcode_enum = Opcode::from_u16(*opcode).unwrap_or(Opcode::AppMessage);
             create_signed_frame(signing_key, sender_id, epoch, room_id, opcode_enum)
-        }
+        },
 
         FrameAttack::CorruptedSignature { member_idx, bit_flip } => {
             let sender_id = members[(*member_idx as usize) % members.len()];
             let signing_key = member_keys.get(&sender_id).expect("member key must exist");
-            let mut frame = create_signed_frame(signing_key, sender_id, epoch, room_id, Opcode::AppMessage);
+            let mut frame =
+                create_signed_frame(signing_key, sender_id, epoch, room_id, Opcode::AppMessage);
 
             let sig_bytes = frame.header.signature();
             if sig_bytes.len() == 64 {
@@ -206,7 +206,7 @@ fn create_frame_from_attack(
                 frame.header.set_signature(sig_array);
             }
             frame
-        }
+        },
     }
 }
 

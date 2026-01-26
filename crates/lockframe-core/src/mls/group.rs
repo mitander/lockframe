@@ -490,59 +490,23 @@ impl<E: Environment> MlsGroup<E> {
             .map_err(|e| MlsError::Crypto(format!("Failed to export group state: {}", e)))
     }
 
-    /// Export the current group state needed for frame validation.
+    /// Export the current group state needed for frame validation (infallible).
     ///
-    /// This returns the lightweight [`MlsGroupState`] subset required by
-    /// [`MlsValidator`] to validate incoming frames:
-    /// - Epoch matching
-    /// - Sender membership
-    /// - Ed25519 signature verification using the sender's stored public key
-    ///
-    /// Unlike [`Self::export_group_state`], this method does notinclude
-    /// the serialized OpenMLS state blob. The returned `openmls_state` is
-    /// empty.
-    ///
-    /// This is used for hot-path validation where callers only need to
-    /// authenticate frames without persisting or reconstructing the full
-    /// MLS group.
+    /// Convenience wrapper around [`Self::export_group_state`] that returns
+    /// a default state on error instead of failing. Used for hot-path
+    /// validation where callers need to authenticate frames.
     pub fn export_validation_state(&self) -> MlsGroupState {
-        let mut members = Vec::new();
-        let mut member_keys = HashMap::new();
-
-        for m in self.mls_group.members() {
-            let identity = m.credential.serialized_content();
-            if identity.len() >= 8 {
-                if let Ok(id_bytes) = identity[..8].try_into() {
-                    let member_id = u64::from_le_bytes(id_bytes);
-                    members.push(member_id);
-
-                    if m.signature_key.len() == 32 {
-                        if let Ok(key_bytes) = m.signature_key.as_slice().try_into() {
-                            member_keys.insert(member_id, key_bytes);
-                        }
-                    }
-                }
-            }
-        }
-
-        let tree_hash: [u8; 32] =
-            self.mls_group.export_group_context().tree_hash().try_into().unwrap_or([0u8; 32]);
-
-        MlsGroupState::with_keys(
-            self.room_id,
-            self.epoch(),
-            tree_hash,
-            members,
-            member_keys,
-            Vec::new(),
-        )
+        // Infallible version - uses default tree hash on error
+        self.export_group_state().unwrap_or_else(|_| {
+            MlsGroupState::new(self.room_id, self.epoch(), [0u8; 32], Vec::new())
+        })
     }
 
     /// Export the current group state as an MlsGroupState struct.
     ///
-    /// This is used by the RoomManager to persist MLS state after processing
-    /// commits. It includes the lightweight validation data (epoch, members,
-    /// public keys) plus the serialized OpenMLS state.
+    /// Returns the lightweight validation metadata needed by the server:
+    /// epoch, tree hash, member IDs, and member public keys. The server
+    /// uses this to validate incoming frames without MLS cryptographic state.
     pub fn export_group_state(&self) -> Result<MlsGroupState, MlsError> {
         let mut members = Vec::new();
         let mut member_keys = HashMap::new();
@@ -570,16 +534,7 @@ impl<E: Environment> MlsGroup<E> {
             .try_into()
             .map_err(|_| MlsError::Crypto("tree hash has unexpected length".to_string()))?;
 
-        let state = self.export_state()?;
-
-        Ok(MlsGroupState::with_keys(
-            self.room_id,
-            self.epoch(),
-            tree_hash,
-            members,
-            member_keys,
-            state,
-        ))
+        Ok(MlsGroupState::with_keys(self.room_id, self.epoch(), tree_hash, members, member_keys))
     }
 
     /// Export GroupInfo for external joiners.

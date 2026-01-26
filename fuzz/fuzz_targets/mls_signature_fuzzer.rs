@@ -1,6 +1,7 @@
 //! Fuzz target for MLS signature verification
 //!
-//! Prevent signature forgery and verification bypass (CRITICAL security boundary)
+//! Prevent signature forgery and verification bypass (CRITICAL security
+//! boundary)
 //!
 //! # Strategy
 //!
@@ -111,7 +112,7 @@ fuzz_target!(|input: FuzzInput| {
                     );
                 }
             }
-        }
+        },
 
         SignatureAttack::WrongKey { signing_key } => {
             let (signing_key, verifying_key) = match signing_key {
@@ -128,7 +129,7 @@ fuzz_target!(|input: FuzzInput| {
             if let ValidationResult::Accept = result.unwrap() {
                 panic!("SECURITY VIOLATION: Signature from wrong key accepted!");
             }
-        }
+        },
 
         SignatureAttack::TamperedData { field } => {
             let original_frame = create_signed_frame(&key1, sender_id, epoch, room_id);
@@ -144,15 +145,15 @@ fuzz_target!(|input: FuzzInput| {
                 TamperedField::RoomId(v) if v != tampered.header.room_id() => {
                     tampered.header.set_room_id(v);
                     true
-                }
+                },
                 TamperedField::SenderId(v) if v != tampered.header.sender_id() => {
                     tampered.header.set_sender_id(v);
                     true
-                }
+                },
                 TamperedField::Epoch(v) if v != tampered.header.epoch() => {
                     tampered.header.set_epoch(v);
                     true
-                }
+                },
                 _ => false,
             };
 
@@ -166,7 +167,7 @@ fuzz_target!(|input: FuzzInput| {
             if let ValidationResult::Accept = result.unwrap() {
                 panic!("SECURITY VIOLATION: Tampered frame accepted! Modified {:?}", field);
             }
-        }
+        },
 
         SignatureAttack::MalformedSignature { malformed } => {
             let mut header = FrameHeader::new(Opcode::AppMessage);
@@ -182,14 +183,14 @@ fuzz_target!(|input: FuzzInput| {
                         *byte = seed.wrapping_mul(7).wrapping_add(i as u8);
                     }
                     sig
-                }
+                },
                 MalformedType::HighEntropyGarbage => {
                     let mut sig = [0u8; 64];
                     for (i, byte) in sig.iter_mut().enumerate() {
                         *byte = (i as u8).wrapping_mul(7).wrapping_add(13);
                     }
                     sig
-                }
+                },
             };
 
             header.set_signature(malformed_sig);
@@ -202,7 +203,7 @@ fuzz_target!(|input: FuzzInput| {
             if let ValidationResult::Accept = result.unwrap() {
                 panic!("SECURITY VIOLATION: Malformed signature accepted!");
             }
-        }
+        },
     }
 });
 
@@ -235,5 +236,5 @@ fn create_group_state(
         member_keys.insert(member_id, verifying_key.to_bytes());
     }
 
-    MlsGroupState::with_keys(room_id, epoch, [0u8; 32], members, member_keys, vec![])
+    MlsGroupState::with_keys(room_id, epoch, [0u8; 32], members, member_keys)
 }

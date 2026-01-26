@@ -28,7 +28,7 @@ use libfuzzer_sys::fuzz_target;
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::{Frame, FrameHeader, Opcode};
 use lockframe_server::{
-    storage::MemoryStorage, ChaoticStorage, RoomAction, RoomManager, Storage, SystemEnv,
+    ChaoticStorage, RoomAction, RoomManager, Storage, SystemEnv, storage::MemoryStorage,
 };
 
 #[derive(Debug, Clone, Arbitrary)]
@@ -97,7 +97,6 @@ fuzz_target!(|scenario: ChaosScenario| {
         [0u8; 32],
         member_ids.clone(),
         member_verifying_keys.clone(),
-        vec![],
     );
 
     if storage.store_mls_state(room_id, &initial_mls_state).is_err() {

@@ -29,7 +29,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use libfuzzer_sys::fuzz_target;
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::{Frame, FrameHeader, Opcode};
-use lockframe_server::{storage::MemoryStorage, RoomAction, RoomManager, Storage, SystemEnv};
+use lockframe_server::{RoomAction, RoomManager, Storage, SystemEnv, storage::MemoryStorage};
 
 #[derive(Debug, Clone, Arbitrary)]
 struct E2EScenario {
@@ -87,7 +87,6 @@ fuzz_target!(|scenario: E2EScenario| {
         [0u8; 32],
         member_ids.clone(),
         member_verifying_keys.clone(),
-        vec![],
     );
 
     let mut room_manager = RoomManager::new();
@@ -113,10 +112,10 @@ fuzz_target!(|scenario: E2EScenario| {
                 member_keys.get(&sender_id).map(|signing_key| {
                     create_valid_frame(signing_key, sender_id, epoch, room_id, opcode)
                 })
-            }
+            },
             FrameInput::AttackFrame { attack, member_idx } => {
                 create_attack_frame(&attack, &member_ids, &member_keys, member_idx, epoch, room_id)
-            }
+            },
         };
 
         let Some(frame) = frame_opt else {
@@ -189,7 +188,7 @@ fn create_attack_frame(
                 frame.header.set_signature(sig_array);
             }
             Some(frame)
-        }
+        },
 
         AttackType::WrongEpoch(offset) => {
             let wrong_epoch = epoch.wrapping_add((*offset as u64).max(1));
@@ -200,7 +199,7 @@ fn create_attack_frame(
                 room_id,
                 Opcode::AppMessage.to_u16(),
             ))
-        }
+        },
 
         AttackType::NonMember => {
             let mut header = FrameHeader::new(Opcode::AppMessage);
@@ -209,6 +208,6 @@ fn create_attack_frame(
             header.set_room_id(room_id);
             header.set_signature([0xAA; 64]);
             Some(Frame::new(header, Bytes::new()))
-        }
+        },
     }
 }
