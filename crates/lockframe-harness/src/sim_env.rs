@@ -69,6 +69,12 @@ impl Environment for SimEnv {
             })
             .fill_bytes(dest);
     }
+
+    fn wall_clock_secs(&self) -> u64 {
+        // For simulation, return a fixed timestamp (2024-01-01 00:00:00 UTC)
+        // Virtual time in turmoil is relative, not absolute
+        1704067200
+    }
 }
 
 #[cfg(test)]

@@ -46,6 +46,17 @@ pub trait Environment: Clone + Send + Sync + 'static {
     /// - Uses cryptographically secure RNG
     fn random_bytes(&self, buffer: &mut [u8]);
 
+    /// Wall-clock time as Unix timestamp (seconds since 1970-01-01 00:00:00
+    /// UTC).
+    ///
+    /// Used for audit logging and persistent metadata (e.g., room creation
+    /// time). Unlike `now()`, this returns absolute time suitable for
+    /// storage.
+    ///
+    /// Use `now()` for timeouts and elapsed time. Use `wall_clock_secs()` for
+    /// timestamps that need to be persisted or compared across restarts.
+    fn wall_clock_secs(&self) -> u64;
+
     /// Generates a random `u64`.
     ///
     /// This is a convenience method for common use cases like generating
@@ -152,6 +163,12 @@ pub mod test_utils {
 
         fn random_bytes(&self, buffer: &mut [u8]) {
             self.rng.lock().expect("MockEnv RNG mutex poisoned").fill_bytes(buffer);
+        }
+
+        fn wall_clock_secs(&self) -> u64 {
+            // For testing, return a fixed timestamp (2024-01-01 00:00:00 UTC)
+            // Tests that need specific timestamps can override this behavior
+            1704067200
         }
     }
 

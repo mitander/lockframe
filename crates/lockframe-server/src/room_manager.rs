@@ -129,9 +129,6 @@ impl<I: Copy> RoomManager<I> {
     ///
     /// Persists room metadata to storage first, then updates in-memory state.
     /// The storage persistence is idempotent (won't overwrite existing rooms).
-    ///
-    /// Note: The server does NOT create an MLS group - it just tracks metadata.
-    /// The server routes frames between clients; the clients own the MLS state.
     pub fn create_room<E: Environment<Instant = I>>(
         &mut self,
         room_id: u128,
@@ -143,14 +140,10 @@ impl<I: Copy> RoomManager<I> {
             return Err(RoomError::RoomAlreadyExists(room_id));
         }
 
-        // Persist to storage first (won't overwrite if exists)
-        // TODO: created_at_secs is 0 since we can't convert generic Instant to
-        // Unix time. The in-memory RoomMetadata uses the precise Instant for
-        // timing.
-        let stored_metadata = StoredRoomMetadata { creator, created_at_secs: 0 };
+        let stored_metadata =
+            StoredRoomMetadata { creator, created_at_secs: env.wall_clock_secs() };
         storage.create_room(room_id, &stored_metadata)?;
 
-        // Then update in-memory state
         let metadata = RoomMetadata { creator, created_at: env.now() };
         self.room_metadata.insert(room_id, metadata);
 
@@ -182,7 +175,6 @@ impl<I: Copy> RoomManager<I> {
             .iter()
             .map(|f| {
                 let mut buf = Vec::new();
-                // Frame encoding should not fail for valid frames
                 f.encode(&mut buf).expect("invariant: stored frames are valid");
                 buf
             })

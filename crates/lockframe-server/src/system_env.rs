@@ -60,6 +60,13 @@ impl Environment for SystemEnv {
         getrandom::fill(buffer)
             .expect("OS RNG failure is unrecoverable - server cannot operate securely");
     }
+
+    fn wall_clock_secs(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System clock is before Unix epoch")
+            .as_secs()
+    }
 }
 
 #[cfg(test)]

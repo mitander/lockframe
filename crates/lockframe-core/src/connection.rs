@@ -461,6 +461,11 @@ mod tests {
                 *byte = i as u8;
             }
         }
+
+        fn wall_clock_secs(&self) -> u64 {
+            // Fixed timestamp for tests (2024-01-01 00:00:00 UTC)
+            1704067200
+        }
     }
 
     #[test]
