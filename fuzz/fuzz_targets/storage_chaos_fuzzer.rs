@@ -87,7 +87,7 @@ fuzz_target!(|scenario: ChaosScenario| {
         member_keys.insert(member_id, signing_key);
     }
 
-    if room_manager.create_room(room_id, member_ids[0], &env).is_err() {
+    if room_manager.create_room(room_id, member_ids[0], &env, &storage).is_err() {
         return;
     }
 

@@ -93,7 +93,7 @@ fuzz_target!(|scenario: E2EScenario| {
     let storage = MemoryStorage::new();
 
     // Create room through RoomManager
-    if room_manager.create_room(room_id, member_ids[0], &env).is_err() {
+    if room_manager.create_room(room_id, member_ids[0], &env, &storage).is_err() {
         return;
     }
 
