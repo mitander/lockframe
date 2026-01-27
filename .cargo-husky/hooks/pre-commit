@@ -31,5 +31,11 @@ cargo nextest run --workspace || {
     exit 1
 }
 
-echo "SUCCESS: All pre-commit checks passed!"
+# Check fuzz targets compile
+echo "Running fuzz target checks..."
+(cd fuzz && cargo check --all-targets) || {
+    echo "FAILURE: Cargo check failed. Fix them before committing."
+    exit 1
+}
 
+echo "SUCCESS: All pre-commit checks passed!"
