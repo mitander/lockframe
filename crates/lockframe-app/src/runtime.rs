@@ -79,7 +79,7 @@ where
 
         if self.driver.is_connected() {
             if let Some(frame) = self.driver.recv_frame().await {
-                if let Some(Opcode::HelloReply) = frame.header.opcode_enum() {
+                if frame.header.opcode_enum() == Some(Opcode::HelloReply) {
                     self.handle_hello_reply(frame).await?;
                 } else {
                     let events = self.bridge.handle_frame(frame);
@@ -137,9 +137,9 @@ where
         Ok(false)
     }
 
-    /// Handle HelloReply frame to complete connection handshake.
+    /// Handle `HelloReply` frame to complete connection handshake.
     async fn handle_hello_reply(&mut self, frame: Frame) -> Result<(), D::Error> {
-        let payload = match Payload::from_frame(frame) {
+        let payload = match Payload::from_frame(&frame) {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!("Failed to parse HelloReply: {:?}", e);

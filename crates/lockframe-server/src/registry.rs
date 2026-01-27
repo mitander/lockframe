@@ -65,7 +65,7 @@ impl ConnectionRegistry {
     ///
     /// Returns `false` if:
     /// - Session already exists, or
-    /// - The session has a user_id and that user is already associated with
+    /// - The session has a `user_id` and that user is already associated with
     ///   another session
     /// (enforces one session per user).
     pub fn register_session(&mut self, session_id: u64, info: SessionInfo) -> bool {
@@ -137,11 +137,10 @@ impl ConnectionRegistry {
 
         // Check for user conflict if new user_id is different
         if let Some(new_user_id) = new_info.user_id {
-            if Some(new_user_id) != old_info.user_id {
-                if self.user_sessions.contains_key(&new_user_id) {
+            if Some(new_user_id) != old_info.user_id
+                && self.user_sessions.contains_key(&new_user_id) {
                     return false; // New user already has an active session
                 }
-            }
         }
 
         // Remove old reverse index entry

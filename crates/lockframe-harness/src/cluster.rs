@@ -1,6 +1,6 @@
 //! Test cluster simulation for convergence testing.
 //!
-//! Provides a simplified server implementation that stores GroupInfo and
+//! Provides a simplified server implementation that stores `GroupInfo` and
 //! broadcasts commits. This allows deterministic property-based testing
 //! of Client convergence logic without requiring a real async server.
 
@@ -12,11 +12,11 @@ use lockframe_proto::{FrameHeader, Opcode, Payload, payloads::mls::GroupInfoPayl
 
 use crate::SimEnv;
 
-/// Simulated cluster of clients with minimal server-side GroupInfo storage.
+/// Simulated cluster of clients with minimal server-side `GroupInfo` storage.
 pub struct TestCluster {
     /// List of simulated clients.
     pub clients: Vec<Client<SimEnv>>,
-    /// Simulated server storage: room_id -> (epoch, group_info_bytes)
+    /// Simulated server storage: `room_id` -> (epoch, `group_info_bytes`)
     group_info_storage: HashMap<RoomId, (u64, Vec<u8>)>,
 }
 
@@ -35,12 +35,12 @@ impl TestCluster {
         Self { clients, group_info_storage: HashMap::new() }
     }
 
-    /// Store GroupInfo for a room (simulates server's Storage trait).
+    /// Store `GroupInfo` for a room (simulates server's Storage trait).
     pub fn store_group_info(&mut self, room_id: RoomId, epoch: u64, group_info_bytes: Vec<u8>) {
         self.group_info_storage.insert(room_id, (epoch, group_info_bytes));
     }
 
-    /// Load GroupInfo for a room (simulates server's Storage trait).
+    /// Load `GroupInfo` for a room (simulates server's Storage trait).
     pub fn load_group_info(&self, room_id: RoomId) -> Option<(u64, Vec<u8>)> {
         self.group_info_storage.get(&room_id).cloned()
     }
@@ -63,7 +63,7 @@ impl TestCluster {
         for action in &actions {
             if let ClientAction::Send(frame) = action {
                 if frame.header.opcode_enum() == Some(Opcode::GroupInfo) {
-                    if let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame.clone()) {
+                    if let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame) {
                         self.store_group_info(room_id, payload.epoch, payload.group_info_bytes);
                     }
                 }
@@ -89,8 +89,8 @@ impl TestCluster {
         for action in &add_actions {
             if let ClientAction::Send(frame) = action {
                 match frame.header.opcode_enum() {
-                    Some(Opcode::Welcome) => welcome_frame = Some(frame.clone()),
-                    Some(Opcode::Commit) => commit_frame = Some(frame.clone()),
+                    Some(Opcode::Welcome) => welcome_frame = Some(frame),
+                    Some(Opcode::Commit) => commit_frame = Some(frame),
                     _ => {},
                 }
             }
@@ -107,7 +107,7 @@ impl TestCluster {
         for action in &commit_actions {
             if let ClientAction::Send(frame) = action {
                 if frame.header.opcode_enum() == Some(Opcode::GroupInfo) {
-                    if let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame.clone()) {
+                    if let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame) {
                         self.store_group_info(room_id, payload.epoch, payload.group_info_bytes);
                     }
                 }
@@ -154,9 +154,9 @@ impl TestCluster {
             if let ClientAction::Send(frame) = action {
                 if matches!(
                     frame.header.opcode_enum(),
-                    Some(Opcode::Commit) | Some(Opcode::ExternalCommit)
+                    Some(Opcode::Commit | Opcode::ExternalCommit)
                 ) {
-                    ext_commit = Some(frame.clone());
+                    ext_commit = Some(frame);
                 }
             }
         }
@@ -173,9 +173,7 @@ impl TestCluster {
                 for action in &commit_actions {
                     if let ClientAction::Send(frame) = action {
                         if frame.header.opcode_enum() == Some(Opcode::GroupInfo) {
-                            if let Ok(Payload::GroupInfo(payload)) =
-                                Payload::from_frame(frame.clone())
-                            {
+                            if let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame) {
                                 joiner_group_info = Some((payload.epoch, payload.group_info_bytes));
                             }
                         }

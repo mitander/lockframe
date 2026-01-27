@@ -83,7 +83,7 @@ impl ModelServer {
 
     /// Check if a client is a member of a room.
     pub fn is_member(&self, room_id: ModelRoomId, client_id: ClientId) -> bool {
-        self.rooms.get(&room_id).map(|r| r.members.contains(&client_id)).unwrap_or(false)
+        self.rooms.get(&room_id).is_some_and(|r| r.members.contains(&client_id))
     }
 
     /// Members of a room.
@@ -91,7 +91,7 @@ impl ModelServer {
         self.rooms.get(&room_id).map(|r| r.members.iter().copied())
     }
 
-    /// Messages in a room (ordered by log_index).
+    /// Messages in a room (ordered by `log_index`).
     pub fn messages(&self, room_id: ModelRoomId) -> Option<&[ModelMessage]> {
         self.rooms.get(&room_id).map(|r| r.messages.as_slice())
     }
@@ -117,7 +117,7 @@ impl ModelServer {
 
     /// Process a message from a client.
     ///
-    /// Assigns log_index and stores the message. The message is queued for
+    /// Assigns `log_index` and stores the message. The message is queued for
     /// pending delivery (call `take_pending` to get messages for delivery).
     pub fn process_message(
         &mut self,

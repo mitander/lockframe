@@ -96,7 +96,7 @@ fn prop_connection_state_transitions_valid() {
         let config = ConnectionConfig::default();
         let mut conn = Connection::new(t0, config);
 
-        let initial_state = conn.state().clone();
+        let initial_state = conn.state();
 
         // Process sequence of frames
         for opcode in opcodes {

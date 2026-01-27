@@ -23,7 +23,7 @@ pub struct SimTransport {
 
 /// Simulated connection over TCP.
 ///
-/// Wraps a TcpStream and provides QUIC-like semantics for testing. Unlike
+/// Wraps a `TcpStream` and provides QUIC-like semantics for testing. Unlike
 /// QUIC's multiple concurrent streams, TCP provides only one bidirectional byte
 /// stream - sufficient for testing protocol logic without QUIC multiplexing
 /// complexity.

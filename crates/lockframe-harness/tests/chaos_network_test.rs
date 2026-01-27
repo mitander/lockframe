@@ -56,8 +56,8 @@ fn multiple_clients_connect() {
     });
 
     for i in 0..3 {
-        let client_name = format!("client{}", i);
-        let msg = format!("msg{}", i);
+        let client_name = format!("client{i}");
+        let msg = format!("msg{i}");
         sim.client(client_name, async move {
             let mut stream = TcpStream::connect("server:443").await?;
 
@@ -125,7 +125,7 @@ fn large_message_transfer() {
 
         // Verify pattern
         for (i, byte) in buf.iter().enumerate() {
-            assert_eq!(*byte, (i % 256) as u8, "data corruption at byte {}", i);
+            assert_eq!(*byte, (i % 256) as u8, "data corruption at byte {i}");
         }
 
         stream.write_all(b"ok").await?;

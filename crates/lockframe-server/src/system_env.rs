@@ -1,11 +1,11 @@
 //! Production Environment implementation using system time and RNG.
 //!
-//! SystemEnv is the production implementation of the Environment trait using
+//! `SystemEnv` is the production implementation of the Environment trait using
 //! real system time and cryptographic RNG.
 //!
 //! # Capabilities
 //!
-//! - Real system time (std::time::Instant) that advances naturally
+//! - Real system time (`std::time::Instant`) that advances naturally
 //! - OS cryptographic RNG (getrandom). Truly random, not reproducible
 //! - Tokio async sleep for actual wall-clock delays
 //!
@@ -18,13 +18,13 @@ use lockframe_core::env::Environment;
 
 /// Production environment using system time and cryptographic RNG.
 ///
-/// Uses std::time::Instant::now() for time, tokio::time::sleep() for async
+/// Uses `std::time::Instant::now()` for time, `tokio::time::sleep()` for async
 /// sleeping, and getrandom for cryptographic randomness.
 ///
 /// # Security
 ///
 /// The RNG uses getrandom which provides OS-level cryptographic randomness
-/// (e.g., /dev/urandom on Linux, BCryptGenRandom on Windows). Suitable for
+/// (e.g., /dev/urandom on Linux, `BCryptGenRandom` on Windows). Suitable for
 /// generating session IDs, nonces, ephemeral keys, and other security-critical
 /// values.
 ///

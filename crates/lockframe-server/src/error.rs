@@ -31,20 +31,20 @@ pub enum ServerError {
     /// Fatal - report as issue.
     Internal(String),
 
-    /// Driver error (from ServerDriver processing).
+    /// Driver error (from `ServerDriver` processing).
     ///
-    /// Wraps errors from the core server logic. See DriverError for details.
+    /// Wraps errors from the core server logic. See `DriverError` for details.
     Driver(DriverError),
 }
 
 impl fmt::Display for ServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config(msg) => write!(f, "configuration error: {}", msg),
-            Self::Transport(msg) => write!(f, "transport error: {}", msg),
-            Self::Protocol(msg) => write!(f, "protocol error: {}", msg),
-            Self::Internal(msg) => write!(f, "internal error: {}", msg),
-            Self::Driver(err) => write!(f, "driver error: {}", err),
+            Self::Config(msg) => write!(f, "configuration error: {msg}"),
+            Self::Transport(msg) => write!(f, "transport error: {msg}"),
+            Self::Protocol(msg) => write!(f, "protocol error: {msg}"),
+            Self::Internal(msg) => write!(f, "internal error: {msg}"),
+            Self::Driver(err) => write!(f, "driver error: {err}"),
         }
     }
 }

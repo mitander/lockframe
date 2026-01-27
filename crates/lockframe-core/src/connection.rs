@@ -62,9 +62,9 @@ pub enum ConnectionAction {
 pub enum ConnectionState {
     /// Initial state - no handshake started
     Init,
-    /// Hello sent, waiting for HelloReply
+    /// Hello sent, waiting for `HelloReply`
     Pending,
-    /// HelloReply received, connection authenticated
+    /// `HelloReply` received, connection authenticated
     Authenticated,
     /// Connection closed (graceful or error)
     Closed,
@@ -77,7 +77,7 @@ pub struct ConnectionConfig {
     pub handshake_timeout: Duration,
     /// Idle timeout before disconnecting
     pub idle_timeout: Duration,
-    /// Heartbeat interval (should be < idle_timeout / 2)
+    /// Heartbeat interval (should be < `idle_timeout` / 2)
     pub heartbeat_interval: Duration,
 }
 
@@ -115,7 +115,7 @@ where
     last_heartbeat: Option<I>,
     /// Session ID (assigned by server)
     session_id: Option<u64>,
-    /// Client's sender ID (from Hello frame, used for KeyPackage registry)
+    /// Client's sender ID (from Hello frame, used for `KeyPackage` registry)
     client_sender_id: Option<u64>,
 }
 
@@ -149,7 +149,7 @@ where
 
     /// Client's sender ID from Hello frame. `None` if not provided.
     ///
-    /// Used for KeyPackage registry lookup. Falls back to session_id if not
+    /// Used for `KeyPackage` registry lookup. Falls back to `session_id` if not
     /// set.
     #[must_use]
     pub fn client_sender_id(&self) -> Option<u64> {
@@ -166,7 +166,7 @@ where
     ///
     /// The server should generate a random session ID and set it before
     /// handling an incoming Hello frame. The state machine will use this
-    /// ID when constructing the HelloReply.
+    /// ID when constructing the `HelloReply`.
     pub fn set_session_id(&mut self, session_id: u64) {
         self.session_id = Some(session_id);
     }
@@ -274,8 +274,8 @@ where
         // Check for timeout
         if let Some(elapsed) = self.check_timeout(now) {
             let reason = match self.state {
-                ConnectionState::Pending => format!("handshake timeout after {:?}", elapsed),
-                ConnectionState::Authenticated => format!("idle timeout after {:?}", elapsed),
+                ConnectionState::Pending => format!("handshake timeout after {elapsed:?}"),
+                ConnectionState::Authenticated => format!("idle timeout after {elapsed:?}"),
                 _ => "timeout".to_string(),
             };
 
@@ -313,7 +313,7 @@ where
     /// - `ConnectionError::UnexpectedFrame` if opcode invalid for current state
     /// - `ConnectionError::InvalidPayload` if CBOR deserialization fails
     /// - `ConnectionError::UnsupportedVersion` if Hello version ≠ 1
-    /// - `ConnectionError::Protocol` if server session_id not set
+    /// - `ConnectionError::Protocol` if server `session_id` not set
     pub fn handle_frame(
         &mut self,
         frame: &Frame,
@@ -331,7 +331,7 @@ where
         match (self.state, opcode) {
             // Server: receive Hello in Init state
             (ConnectionState::Init, Opcode::Hello) => {
-                let payload = Payload::from_frame(frame.clone())?;
+                let payload = Payload::from_frame(frame)?;
 
                 match payload {
                     Payload::Hello(hello) => {
@@ -369,7 +369,7 @@ where
 
             // Client: receive HelloReply in Pending state
             (ConnectionState::Pending, Opcode::HelloReply) => {
-                let payload = Payload::from_frame(frame.clone())?;
+                let payload = Payload::from_frame(frame)?;
 
                 match payload {
                     Payload::HelloReply(reply) => {
@@ -400,7 +400,7 @@ where
 
             // Both: Goodbye (any state except Closed)
             (state, Opcode::Goodbye) if state != ConnectionState::Closed => {
-                let payload = Payload::from_frame(frame.clone())?;
+                let payload = Payload::from_frame(frame)?;
 
                 let reason = match payload {
                     Payload::Goodbye(goodbye) => goodbye.reason,
@@ -418,7 +418,7 @@ where
                 let frame = reply.into_frame(FrameHeader::new(Opcode::Goodbye))?;
 
                 Ok(vec![ConnectionAction::SendFrame(frame), ConnectionAction::Close {
-                    reason: format!("peer goodbye: {}", reason),
+                    reason: format!("peer goodbye: {reason}"),
                 }])
             },
 
@@ -582,7 +582,7 @@ mod tests {
                 assert_eq!(frame.header.opcode_enum(), Some(Opcode::HelloReply));
 
                 // Verify HelloReply contains correct session_id
-                let payload = Payload::from_frame(frame.clone()).unwrap();
+                let payload = Payload::from_frame(&frame).unwrap();
                 match payload {
                     Payload::HelloReply(reply) => {
                         assert_eq!(reply.session_id, 0x1234_5678_9ABC_DEF0);
@@ -652,7 +652,7 @@ mod tests {
                 assert_eq!(frame.header.opcode_enum(), Some(Opcode::HelloReply));
 
                 // Verify HelloReply contains session_id
-                let payload = Payload::from_frame(frame.clone()).unwrap();
+                let payload = Payload::from_frame(&frame).unwrap();
                 match payload {
                     Payload::HelloReply(reply) => {
                         assert_ne!(reply.session_id, 0);

@@ -1,6 +1,6 @@
 //! Room Manager behavior tests
 //!
-//! Tests for specific routing behaviors of the server RoomManager.
+//! Tests for specific routing behaviors of the server `RoomManager`.
 
 use bytes::Bytes;
 use lockframe_core::env::test_utils::MockEnv;

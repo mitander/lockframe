@@ -145,7 +145,7 @@ impl ErrorPayload {
     pub fn room_not_found(room_id: u128) -> Self {
         Self {
             code: Self::ROOM_NOT_FOUND,
-            message: format!("room not found: {:032x}", room_id),
+            message: format!("room not found: {room_id:032x}"),
             retry_after: None,
         }
     }
@@ -174,7 +174,7 @@ impl ErrorPayload {
     pub fn keypackage_not_found(user_id: u64) -> Self {
         Self {
             code: Self::KEYPACKAGE_NOT_FOUND,
-            message: format!("no KeyPackage for user {}", user_id),
+            message: format!("no KeyPackage for user {user_id}"),
             retry_after: None,
         }
     }
@@ -408,7 +408,7 @@ impl Payload {
     /// - `ProtocolError::CborDecode` if opcode is invalid or unsupported
     /// - `ProtocolError::CborDecode` if CBOR deserialization fails
     /// - `ProtocolError::PayloadTooLarge` if payload exceeds maximum size
-    pub fn from_frame(frame: Frame) -> Result<Self> {
+    pub fn from_frame(frame: &Frame) -> Result<Self> {
         let opcode = frame.header.opcode_enum().ok_or_else(|| {
             ProtocolError::CborDecode(format!("Invalid opcode: {:#06x}", frame.header.opcode()))
         })?;
@@ -432,7 +432,7 @@ mod tests {
 
         // Convert to frame and back
         let frame = payload.clone().into_frame(header).expect("should create frame");
-        let decoded = Payload::from_frame(frame).expect("should parse payload");
+        let decoded = Payload::from_frame(&frame).expect("should parse payload");
         assert_eq!(payload, decoded);
     }
 
@@ -452,7 +452,7 @@ mod tests {
 
         // Convert to frame and back
         let frame = payload.clone().into_frame(header).expect("should create frame");
-        let decoded = Payload::from_frame(frame).expect("should parse payload");
+        let decoded = Payload::from_frame(&frame).expect("should parse payload");
         assert_eq!(payload, decoded);
     }
 }

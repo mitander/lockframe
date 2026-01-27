@@ -1,7 +1,7 @@
 //! Actor wrappers for scenario execution.
 //!
 //! Actors wrap Connection state machines and provide high-level action methods
-//! that automatically execute ConnectionActions (send frames, close
+//! that automatically execute `ConnectionActions` (send frames, close
 //! connections).
 
 use std::time::Instant;
@@ -42,7 +42,7 @@ impl ClientActor {
         }
     }
 
-    /// Handle incoming HelloReply frame.
+    /// Handle incoming `HelloReply` frame.
     pub fn handle_hello_reply(&mut self, frame: &Frame) -> Result<(), String> {
         let actions = self
             .connection
@@ -58,14 +58,14 @@ impl ClientActor {
 
     /// Expect that the client is now authenticated.
     pub fn expect_authenticated(&self) -> Result<(), String> {
-        if self.connection.state() != ConnectionState::Authenticated {
+        if self.connection.state() == ConnectionState::Authenticated {
+            Ok(())
+        } else {
             Err(format!(
                 "Client {} expected Authenticated, got {:?}",
                 self.name,
                 self.connection.state()
             ))
-        } else {
-            Ok(())
         }
     }
 
@@ -93,7 +93,7 @@ impl ServerActor {
         Self { name, connection, now }
     }
 
-    /// Handle incoming Hello frame and return HelloReply frame.
+    /// Handle incoming Hello frame and return `HelloReply` frame.
     pub fn handle_hello(&mut self, frame: &Frame) -> Result<Frame, String> {
         let actions = self
             .connection
@@ -113,14 +113,14 @@ impl ServerActor {
 
     /// Expect that the server is now authenticated.
     pub fn expect_authenticated(&self) -> Result<(), String> {
-        if self.connection.state() != ConnectionState::Authenticated {
+        if self.connection.state() == ConnectionState::Authenticated {
+            Ok(())
+        } else {
             Err(format!(
                 "Server {} expected Authenticated, got {:?}",
                 self.name,
                 self.connection.state()
             ))
-        } else {
-            Ok(())
         }
     }
 

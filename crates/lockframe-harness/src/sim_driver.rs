@@ -1,6 +1,6 @@
 //! Simulation driver implementing the Driver trait.
 //!
-//! SimDriver provides the same interface as TerminalDriver but for
+//! `SimDriver` provides the same interface as `TerminalDriver` but for
 //! deterministic testing. It implements [`Driver`] so the same
 //! [`lockframe_app::Runtime`] orchestration code runs in both production and
 //! simulation.
@@ -65,7 +65,7 @@ impl SimDriver {
         self
     }
 
-    /// Inject an AppEvent for processing.
+    /// Inject an `AppEvent` for processing.
     pub fn inject_event(&self, event: AppEvent) {
         let mut state = self.state.lock().unwrap();
         state.pending_events.push_back(event);
@@ -142,25 +142,21 @@ impl Driver for SimDriver {
     }
 
     async fn send_frame(&mut self, frame: Frame) -> Result<(), Self::Error> {
-        let mut state = self.state.lock().unwrap();
-        state.outgoing_frames.push(frame);
+        self.state.lock().unwrap().outgoing_frames.push(frame);
         Ok(())
     }
 
     async fn recv_frame(&mut self) -> Option<Frame> {
-        let mut state = self.state.lock().unwrap();
-        state.incoming_frames.pop_front()
+        self.state.lock().unwrap().incoming_frames.pop_front()
     }
 
     async fn connect(&mut self, _addr: &str) -> Result<(), Self::Error> {
-        let mut state = self.state.lock().unwrap();
-        state.connected = true;
+        self.state.lock().unwrap().connected = true;
         Ok(())
     }
 
     fn is_connected(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        state.connected
+        self.state.lock().unwrap().connected
     }
 
     fn now(&self) -> Self::Instant {

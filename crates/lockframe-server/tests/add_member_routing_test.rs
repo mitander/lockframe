@@ -1,9 +1,9 @@
 //! Integration test for /add member flow.
 //!
 //! This test verifies the EXACT same code paths as the real QUIC server:
-//! 1. Connections are registered with ServerDriver
-//! 2. Hello frames establish user_id → session_id mapping
-//! 3. KeyPackage publish/fetch works via registry
+//! 1. Connections are registered with `ServerDriver`
+//! 2. Hello frames establish `user_id` → `session_id` mapping
+//! 3. `KeyPackage` publish/fetch works via registry
 //! 4. Welcome frames are routed to correct recipients
 
 use lockframe_proto::{Frame, FrameHeader, Opcode, Payload, payloads::session::Hello};
@@ -11,7 +11,7 @@ use lockframe_server::{
     DriverConfig, MemoryStorage, ServerAction, ServerDriver, ServerEvent, SystemEnv,
 };
 
-/// Collect all SendToSession actions for a specific session.
+/// Collect all `SendToSession` actions for a specific session.
 fn frames_for_session(actions: &[ServerAction], target_session: u64) -> Vec<Frame> {
     actions
         .iter()
@@ -151,9 +151,7 @@ fn test_add_member_welcome_routing() {
 
     assert!(
         !bob_welcome_frames.is_empty(),
-        "Welcome frame MUST be routed to Bob's session ({}). Got actions: {:?}",
-        session_2,
-        welcome_actions
+        "Welcome frame MUST be routed to Bob's session ({session_2}). Got actions: {welcome_actions:?}"
     );
 
     assert_eq!(

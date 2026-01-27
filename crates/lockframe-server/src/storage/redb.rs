@@ -12,23 +12,23 @@ use redb::{Database, ReadableTable, TableDefinition};
 use super::{Storage, StorageError, StoredRoomMetadata};
 
 /// Table: frames
-/// Key: (room_id: u128, log_index: u64) as big-endian bytes [24 bytes]
+/// Key: (`room_id`: u128, `log_index`: u64) as big-endian bytes [24 bytes]
 /// Value: Frame bytes (header + payload concatenated)
 const FRAMES: TableDefinition<&[u8], &[u8]> = TableDefinition::new("frames");
 
-/// Table: mls_state
-/// Key: room_id as big-endian bytes [16 bytes]
-/// Value: CBOR-encoded MlsGroupState
+/// Table: `mls_state`
+/// Key: `room_id` as big-endian bytes [16 bytes]
+/// Value: CBOR-encoded `MlsGroupState`
 const MLS_STATE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("mls_state");
 
-/// Table: group_info
-/// Key: room_id as big-endian bytes [16 bytes]
-/// Value: epoch (8 bytes BE) + group_info bytes
+/// Table: `group_info`
+/// Key: `room_id` as big-endian bytes [16 bytes]
+/// Value: epoch (8 bytes BE) + `group_info` bytes
 const GROUP_INFO: TableDefinition<&[u8], &[u8]> = TableDefinition::new("group_info");
 
 /// Table: rooms
-/// Key: room_id as big-endian bytes [16 bytes]
-/// Value: CBOR-encoded StoredRoomMetadata
+/// Key: `room_id` as big-endian bytes [16 bytes]
+/// Value: CBOR-encoded `StoredRoomMetadata`
 const ROOMS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("rooms");
 
 /// Durable storage backed by Redb.
@@ -42,7 +42,7 @@ pub struct RedbStorage {
 impl RedbStorage {
     /// Open or create a Redb database at the given path.
     ///
-    /// Creates tables if they don't exist (FRAMES, MLS_STATE, GROUP_INFO,
+    /// Creates tables if they don't exist (FRAMES, `MLS_STATE`, `GROUP_INFO`,
     /// ROOMS).
     ///
     /// # Errors
@@ -63,7 +63,7 @@ impl RedbStorage {
         Ok(Self { db: Arc::new(db) })
     }
 
-    /// Compute the next expected log_index for a room.
+    /// Compute the next expected `log_index` for a room.
     fn compute_next_log_index<T: ReadableTable<&'static [u8], &'static [u8]>>(
         &self,
         table: &T,
@@ -75,7 +75,7 @@ impl RedbStorage {
         }
     }
 
-    /// Find the latest log_index for a room by scanning keys.
+    /// Find the latest `log_index` for a room by scanning keys.
     fn compute_latest_log_index<T: ReadableTable<&'static [u8], &'static [u8]>>(
         &self,
         table: &T,
@@ -338,9 +338,9 @@ impl Storage for RedbStorage {
     }
 }
 
-/// Encode (room_id, log_index) as 24-byte big-endian key.
+/// Encode (`room_id`, `log_index`) as 24-byte big-endian key.
 ///
-/// Layout: [room_id: 16 bytes BE][log_index: 8 bytes BE]
+/// Layout: [`room_id`: 16 bytes BE][log_index: 8 bytes BE]
 /// This ensures lexicographic ordering matches numeric ordering.
 fn encode_frame_key(room_id: u128, log_index: u64) -> [u8; 24] {
     let mut key = [0u8; 24];
@@ -349,7 +349,7 @@ fn encode_frame_key(room_id: u128, log_index: u64) -> [u8; 24] {
     key
 }
 
-/// Decode frame key back to (room_id, log_index).
+/// Decode frame key back to (`room_id`, `log_index`).
 fn decode_frame_key(key: &[u8]) -> (u128, u64) {
     debug_assert_eq!(key.len(), 24);
     let room_id = u128::from_be_bytes(key[..16].try_into().expect("key length verified"));
@@ -357,7 +357,7 @@ fn decode_frame_key(key: &[u8]) -> (u128, u64) {
     (room_id, log_index)
 }
 
-/// Encode room_id as 16-byte big-endian key.
+/// Encode `room_id` as 16-byte big-endian key.
 fn encode_room_key(room_id: u128) -> [u8; 16] {
     room_id.to_be_bytes()
 }
@@ -437,7 +437,7 @@ mod tests {
 
         match result {
             Err(StorageError::Conflict { expected: 1, got: 2 }) => {},
-            other => panic!("Expected Conflict error, got: {:?}", other),
+            other => panic!("Expected Conflict error, got: {other:?}"),
         }
     }
 
@@ -598,7 +598,7 @@ mod tests {
         }
 
         let mut rooms = storage.list_rooms().unwrap();
-        rooms.sort();
+        rooms.sort_unstable();
         assert_eq!(rooms, vec![100, 200, 300]);
     }
 

@@ -19,7 +19,7 @@ use crate::InputState;
 
 /// Render the entire UI.
 ///
-/// Takes both App state (rooms, messages) and InputState (text buffer, cursor).
+/// Takes both App state (rooms, messages) and `InputState` (text buffer, cursor).
 pub fn render(frame: &mut Frame, app: &App, input_state: &InputState) {
     const MAIN_AREA_MIN_HEIGHT: u16 = 3;
     const INPUT_HEIGHT: u16 = 3;

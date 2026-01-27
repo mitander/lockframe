@@ -1,11 +1,11 @@
 //! Server-side frame sequencer with total ordering.
 //!
 //! Assigns monotonic log indices to frames, enforcing total ordering across
-//! all clients in a room. Maintains next_log_index per room, cached from
+//! all clients in a room. Maintains `next_log_index` per room, cached from
 //! storage.
 //!
 //! Flow: load state from storage, validate frame structure (magic, version,
-//! payload size), assign next log_index, return sequencing actions.
+//! payload size), assign next `log_index`, return sequencing actions.
 
 use std::collections::HashMap;
 
@@ -33,7 +33,7 @@ pub enum SequencerError {
 
 impl From<StorageError> for SequencerError {
     fn from(err: StorageError) -> Self {
-        SequencerError::Storage(err.to_string())
+        Self::Storage(err.to_string())
     }
 }
 
@@ -46,7 +46,7 @@ pub enum SequencerAction {
         room_id: u128,
         /// Assigned log index
         log_index: u64,
-        /// Frame with updated header (includes log_index)
+        /// Frame with updated header (includes `log_index`)
         frame: Frame,
     },
 
@@ -88,7 +88,7 @@ struct RoomSequencer {
 
 /// Server-side frame sequencer
 ///
-/// The Sequencer maintains per-room state (next_log_index)
+/// The Sequencer maintains per-room state (`next_log_index`)
 /// and assigns monotonic log indices to incoming frames.
 #[derive(Debug)]
 pub struct Sequencer {
@@ -155,9 +155,9 @@ impl Sequencer {
     /// # Invariants
     ///
     /// - Pre: Frame header must be valid (magic, version, etc.)
-    /// - Pre: Frame must be validated by caller (RoomManager)
-    /// - Post: If accepted, frame.log_index will be set to next available index
-    /// - Post: room.next_log_index will be incremented
+    /// - Pre: Frame must be validated by caller (`RoomManager`)
+    /// - Post: If accepted, `frame.log_index` will be set to next available index
+    /// - Post: `room.next_log_index` will be incremented
     pub fn process_frame(
         &mut self,
         frame: Frame,
@@ -175,7 +175,7 @@ impl Sequencer {
             return Ok(vec![SequencerAction::BroadcastToRoom { room_id, frame }]);
         }
 
-        if !self.rooms.contains_key(&room_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.rooms.entry(room_id) {
             let latest_index = storage.latest_log_index(room_id).map_err(|e| {
                 tracing::error!(
                     room_id = %room_id,
@@ -185,7 +185,7 @@ impl Sequencer {
                 e
             })?;
 
-            let next_log_index = latest_index.map(|i| i + 1).unwrap_or(0);
+            let next_log_index = latest_index.map_or(0, |i| i + 1);
 
             tracing::info!(
                 room_id = %room_id,
@@ -195,7 +195,7 @@ impl Sequencer {
             );
 
             debug_assert!(
-                latest_index.map(|i| next_log_index == i + 1).unwrap_or(next_log_index == 0)
+                latest_index.map_or(next_log_index == 0, |i| next_log_index == i + 1)
             );
 
             tracing::debug!(
@@ -204,7 +204,7 @@ impl Sequencer {
                 "Initialized room state from storage"
             );
 
-            self.rooms.insert(room_id, RoomSequencer { next_log_index });
+            e.insert(RoomSequencer { next_log_index });
         }
 
         let room = self.rooms.get_mut(&room_id).expect("room must exist after initialization");
@@ -212,14 +212,13 @@ impl Sequencer {
 
         room.next_log_index = room.next_log_index.checked_add(1).ok_or_else(|| {
             SequencerError::Validation(format!(
-                "log_index overflow for room {}: attempted to increment beyond u64::MAX",
-                room_id
+                "log_index overflow for room {room_id}: attempted to increment beyond u64::MAX"
             ))
         })?;
 
         debug_assert!(room.next_log_index > log_index);
 
-        let sequenced_frame = rebuild_frame_with_index(frame.clone(), log_index)?;
+        let sequenced_frame = rebuild_frame_with_index(frame, log_index)?;
 
         debug_assert_eq!(sequenced_frame.header.log_index(), log_index);
 
@@ -270,7 +269,7 @@ impl Sequencer {
             .latest_log_index(room_id)
             .map_err(|e| SequencerError::Storage(e.to_string()))?;
 
-        let next_log_index = latest_index.map(|i| i + 1).unwrap_or(0);
+        let next_log_index = latest_index.map_or(0, |i| i + 1);
 
         tracing::info!(
             room_id = %room_id,
@@ -291,15 +290,15 @@ impl Default for Sequencer {
     }
 }
 
-/// Rebuild frame with new header containing assigned log_index
+/// Rebuild frame with new header containing assigned `log_index`
 ///
-/// This creates a new FrameHeader with the updated log_index while
-/// reusing the payload bytes (zero-copy via Bytes::clone which is Arc-based).
+/// This creates a new `FrameHeader` with the updated `log_index` while
+/// reusing the payload bytes (zero-copy via `Bytes::clone` which is Arc-based).
 fn rebuild_frame_with_index(original: Frame, log_index: u64) -> Result<Frame, SequencerError> {
     let mut new_header = original.header;
     new_header.set_log_index(log_index);
 
-    Ok(Frame::new(new_header, original.payload.clone()))
+    Ok(Frame::new(new_header, original.payload))
 }
 
 #[cfg(test)]
@@ -316,7 +315,7 @@ mod tests {
         header.set_sender_id(sender_id);
         header.set_epoch(epoch);
 
-        Frame::new(header, Bytes::from(format!("msg-{}", sender_id)))
+        Frame::new(header, Bytes::from(format!("msg-{sender_id}")))
     }
 
     #[test]

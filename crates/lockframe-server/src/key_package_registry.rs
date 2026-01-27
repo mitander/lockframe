@@ -1,7 +1,7 @@
-//! KeyPackage registry for storing and retrieving MLS KeyPackages.
+//! `KeyPackage` registry for storing and retrieving MLS `KeyPackages`.
 //!
-//! Provides in-memory storage for KeyPackages indexed by user_id.
-//! KeyPackages are consumed (deleted) after fetch to enforce one-time use.
+//! Provides in-memory storage for `KeyPackages` indexed by `user_id`.
+//! `KeyPackages` are consumed (deleted) after fetch to enforce one-time use.
 //! Enforces capacity limits with LRU eviction to prevent unbounded growth.
 
 use std::{
@@ -9,33 +9,33 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-/// Default maximum number of KeyPackages to store.
+/// Default maximum number of `KeyPackages` to store.
 pub const DEFAULT_MAX_CAPACITY: usize = 1000;
 
-/// Result type for KeyPackage store operations.
+/// Result type for `KeyPackage` store operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreResult {
-    /// KeyPackage was stored successfully.
+    /// `KeyPackage` was stored successfully.
     Success,
-    /// KeyPackage was stored and another entry was evicted.
+    /// `KeyPackage` was stored and another entry was evicted.
     Evicted,
     /// Registry is full and entry could not be stored.
     Full,
 }
 
-/// Stored KeyPackage entry with timestamp for LRU tracking.
+/// Stored `KeyPackage` entry with timestamp for LRU tracking.
 #[derive(Debug, Clone)]
 pub struct KeyPackageEntry {
-    /// Serialized MLS KeyPackage.
+    /// Serialized MLS `KeyPackage`.
     pub key_package_bytes: Vec<u8>,
-    /// KeyPackage hash reference.
+    /// `KeyPackage` hash reference.
     pub hash_ref: Vec<u8>,
     /// Insertion timestamp for LRU tracking (simplified - using counter).
     timestamp: u64,
 }
 
 impl KeyPackageEntry {
-    /// Create a new KeyPackageEntry.
+    /// Create a new `KeyPackageEntry`.
     pub fn new(key_package_bytes: Vec<u8>, hash_ref: Vec<u8>) -> Self {
         Self {
             key_package_bytes,
@@ -45,7 +45,7 @@ impl KeyPackageEntry {
     }
 }
 
-/// In-memory registry for KeyPackages with LRU eviction.
+/// In-memory registry for `KeyPackages` with LRU eviction.
 ///
 /// Thread-safe via Arc<Mutex<_>>. Clone shares the same underlying storage.
 #[derive(Clone)]
@@ -53,11 +53,11 @@ pub struct KeyPackageRegistry {
     inner: Arc<Mutex<KeyPackageRegistryInner>>,
 }
 
-/// Internal state for KeyPackageRegistry.
+/// Internal state for `KeyPackageRegistry`.
 struct KeyPackageRegistryInner {
-    /// KeyPackage entries indexed by user_id.
+    /// `KeyPackage` entries indexed by `user_id`.
     entries: HashMap<u64, KeyPackageEntry>,
-    /// LRU tracking - ordered list of user_ids (most recent at back).
+    /// LRU tracking - ordered list of `user_ids` (most recent at back).
     lru_order: VecDeque<u64>,
     /// Maximum capacity.
     max_capacity: usize,
@@ -83,9 +83,9 @@ impl KeyPackageRegistry {
         }
     }
 
-    /// Store a KeyPackage for a user.
+    /// Store a `KeyPackage` for a user.
     ///
-    /// Overwrites any existing KeyPackage for this user_id and updates LRU
+    /// Overwrites any existing `KeyPackage` for this `user_id` and updates LRU
     /// order. Evicts oldest entry if capacity is exceeded.
     ///
     /// Returns `StoreResult` indicating success, eviction, or if registry is
@@ -123,10 +123,10 @@ impl KeyPackageRegistry {
         result
     }
 
-    /// Fetch and remove a KeyPackage for a user.
+    /// Fetch and remove a `KeyPackage` for a user.
     ///
-    /// Returns `None` if no KeyPackage exists for this user.
-    /// Removes the KeyPackage after fetching (one-time use).
+    /// Returns `None` if no `KeyPackage` exists for this user.
+    /// Removes the `KeyPackage` after fetching (one-time use).
     /// Also removes from LRU tracking.
     ///
     /// # Panics
@@ -144,7 +144,7 @@ impl KeyPackageRegistry {
         entry
     }
 
-    /// Check if a KeyPackage exists for a user (without consuming it).
+    /// Check if a `KeyPackage` exists for a user (without consuming it).
     ///
     /// # Concurrency
     ///
@@ -163,7 +163,7 @@ impl KeyPackageRegistry {
         inner.entries.contains_key(&user_id)
     }
 
-    /// Number of stored KeyPackages.
+    /// Number of stored `KeyPackages`.
     pub fn count(&self) -> usize {
         let inner = self.inner.lock().expect("KeyPackageRegistry mutex poisoned");
         inner.entries.len()

@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn receipt_serde() {
         let receipt =
-            Receipt { message_log_index: 42, kind: ReceiptType::Read, timestamp: 1234567890 };
+            Receipt { message_log_index: 42, kind: ReceiptType::Read, timestamp: 1_234_567_890 };
 
         let cbor = ciborium::ser::into_writer(&receipt, Vec::new());
         assert!(cbor.is_ok());

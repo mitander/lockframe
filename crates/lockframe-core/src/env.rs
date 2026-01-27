@@ -92,7 +92,7 @@ pub mod test_utils {
 
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use super::{Duration, Environment};
 
     /// Mock environment with controllable time for deterministic testing.
     ///
@@ -100,7 +100,7 @@ pub mod test_utils {
     /// `advance_time()`. This ensures tests are fully reproducible regardless
     /// of when they run.
     ///
-    /// Randomness is provided by a StdRng that is either:
+    /// Randomness is provided by a `StdRng` that is either:
     /// - Seeded with a fixed value (deterministic mode)
     /// - Seeded from OS entropy (crypto mode for MLS tests)
     #[derive(Clone)]
@@ -162,13 +162,18 @@ pub mod test_utils {
         }
 
         fn random_bytes(&self, buffer: &mut [u8]) {
-            self.rng.lock().expect("MockEnv RNG mutex poisoned").fill_bytes(buffer);
+            // INVARIANT: Mutex poisoning only occurs if a thread panicked while holding
+            // the lock. This indicates broken test infrastructure, so panicking is correct.
+            self.rng
+                .lock()
+                .expect("invariant: MockEnv RNG mutex poisoned - test infrastructure is broken")
+                .fill_bytes(buffer);
         }
 
         fn wall_clock_secs(&self) -> u64 {
             // For testing, return a fixed timestamp (2024-01-01 00:00:00 UTC)
             // Tests that need specific timestamps can override this behavior
-            1704067200
+            1_704_067_200
         }
     }
 

@@ -14,7 +14,7 @@ use turmoil::Builder;
 /// Test room ID
 const ROOM_ID: u128 = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
 
-/// Extract SendFrame actions
+/// Extract `SendFrame` actions
 fn extract_send_frames(actions: &[ClientAction]) -> Vec<Frame> {
     actions
         .iter()
@@ -44,7 +44,7 @@ fn client_large_message_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice = ClientIdentity::new(1);
-        let mut alice_client = Client::new(env.clone(), alice);
+        let mut alice_client = Client::new(env, alice);
 
         alice_client.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
@@ -55,7 +55,7 @@ fn client_large_message_handling() {
             let plaintext = vec![b'X'; size];
             let actions = alice_client
                 .handle(ClientEvent::SendMessage { room_id: ROOM_ID, plaintext: plaintext.clone() })
-                .expect(&format!("send {}-byte message", size));
+                .unwrap_or_else(|_| panic!("send {size}-byte message"));
 
             let frames = extract_send_frames(&actions);
             assert_eq!(frames.len(), 1);
@@ -64,17 +64,14 @@ fn client_large_message_handling() {
             // (includes nonce, auth tag, CBOR overhead)
             assert!(
                 frames[0].payload.len() > size,
-                "Encrypted {}B message should be larger than plaintext",
-                size
+                "Encrypted {size}B message should be larger than plaintext"
             );
 
             // Oracle: Check reasonable overhead (CBOR + nonce + tag < 500 bytes typically)
             let overhead = frames[0].payload.len() - size;
             assert!(
                 overhead < 500,
-                "Overhead for {}B message is {}B, expected < 500B",
-                size,
-                overhead
+                "Overhead for {size}B message is {overhead}B, expected < 500B"
             );
         }
 
@@ -103,7 +100,7 @@ fn client_empty_message_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice = ClientIdentity::new(1);
-        let mut alice_client = Client::new(env.clone(), alice);
+        let mut alice_client = Client::new(env, alice);
 
         alice_client.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
@@ -147,7 +144,7 @@ fn client_malformed_payload_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice_identity = ClientIdentity::new(1);
-        let mut alice = Client::new(env.clone(), alice_identity);
+        let mut alice = Client::new(env, alice_identity);
 
         alice.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
@@ -202,7 +199,7 @@ fn client_encryption_determinism() {
         // First run with seed 12345
         let env1 = SimEnv::with_seed(12345);
         let alice1 = ClientIdentity::new(1);
-        let mut alice_client1 = Client::new(env1.clone(), alice1);
+        let mut alice_client1 = Client::new(env1, alice1);
 
         alice_client1.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room 1");
 
@@ -211,7 +208,7 @@ fn client_encryption_determinism() {
             let actions = alice_client1
                 .handle(ClientEvent::SendMessage {
                     room_id: ROOM_ID,
-                    plaintext: format!("Message {}", i).into_bytes(),
+                    plaintext: format!("Message {i}").into_bytes(),
                 })
                 .expect("send message 1");
 
@@ -223,7 +220,7 @@ fn client_encryption_determinism() {
         let room_id_2 = ROOM_ID.wrapping_add(1);
         let env2 = SimEnv::with_seed(12345);
         let alice2 = ClientIdentity::new(1);
-        let mut alice_client2 = Client::new(env2.clone(), alice2);
+        let mut alice_client2 = Client::new(env2, alice2);
 
         alice_client2
             .handle(ClientEvent::CreateRoom { room_id: room_id_2 })
@@ -234,7 +231,7 @@ fn client_encryption_determinism() {
             let actions = alice_client2
                 .handle(ClientEvent::SendMessage {
                     room_id: room_id_2,
-                    plaintext: format!("Message {}", i).into_bytes(),
+                    plaintext: format!("Message {i}").into_bytes(),
                 })
                 .expect("send message 2");
 
@@ -246,7 +243,7 @@ fn client_encryption_determinism() {
         let room_id_3 = ROOM_ID.wrapping_add(2);
         let env3 = SimEnv::with_seed(54321);
         let alice3 = ClientIdentity::new(1);
-        let mut alice_client3 = Client::new(env3.clone(), alice3);
+        let mut alice_client3 = Client::new(env3, alice3);
 
         alice_client3
             .handle(ClientEvent::CreateRoom { room_id: room_id_3 })
@@ -257,7 +254,7 @@ fn client_encryption_determinism() {
             let actions = alice_client3
                 .handle(ClientEvent::SendMessage {
                     room_id: room_id_3,
-                    plaintext: format!("Message {}", i).into_bytes(),
+                    plaintext: format!("Message {i}").into_bytes(),
                 })
                 .expect("send message 3");
 

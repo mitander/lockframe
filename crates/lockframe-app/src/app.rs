@@ -133,17 +133,17 @@ impl App {
     }
 
     /// Join an existing room via external commit.
-    pub fn join_room(&mut self, room_id: RoomId) -> Vec<AppAction> {
+    pub fn join_room(&self, room_id: RoomId) -> Vec<AppAction> {
         vec![AppAction::JoinRoom { room_id }, AppAction::Render]
     }
 
     /// Leave the specified room.
-    pub fn leave_room(&mut self, room_id: RoomId) -> Vec<AppAction> {
+    pub fn leave_room(&self, room_id: RoomId) -> Vec<AppAction> {
         vec![AppAction::LeaveRoom { room_id }, AppAction::Render]
     }
 
     /// Publish a key package so others can add us to rooms.
-    pub fn publish_key_package(&mut self) -> Vec<AppAction> {
+    pub fn publish_key_package(&self) -> Vec<AppAction> {
         vec![AppAction::PublishKeyPackage, AppAction::Render]
     }
 
@@ -154,7 +154,7 @@ impl App {
     }
 
     /// Send a message to the specified room.
-    pub fn send_message(&mut self, room_id: RoomId, content: Vec<u8>) -> Vec<AppAction> {
+    pub fn send_message(&self, room_id: RoomId, content: Vec<u8>) -> Vec<AppAction> {
         vec![AppAction::SendMessage { room_id, content }, AppAction::Render]
     }
 
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn api_join_room() {
-        let mut app = connected_app();
+        let app = connected_app();
         let actions = app.join_room(200);
 
         assert!(matches!(actions.as_slice(), [
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn api_leave_room() {
-        let mut app = connected_app();
+        let app = connected_app();
         let actions = app.leave_room(100);
 
         assert!(matches!(actions.as_slice(), [
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn api_send_message() {
-        let mut app = connected_app();
+        let app = connected_app();
         let actions = app.send_message(100, b"hello".to_vec());
 
         assert!(matches!(actions.as_slice(), [

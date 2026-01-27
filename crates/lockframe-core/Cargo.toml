@@ -32,6 +32,7 @@ rand = "0.8"
 
 # Ed25519 signatures for frame authentication
 ed25519-dalek = { version = "2.1", features = ["serde"] }
+tls_codec = "0.4.2"
 
 [dev-dependencies]
 # Property-based testing

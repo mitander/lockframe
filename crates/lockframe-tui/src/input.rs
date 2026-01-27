@@ -156,11 +156,11 @@ impl InputState {
                 }
             },
             Command::Unknown { input } => {
-                app.set_status(format!("Unknown command: {}", input));
+                app.set_status(format!("Unknown command: {input}"));
                 vec![AppAction::Render]
             },
             Command::InvalidArgs { command, error } => {
-                app.set_status(format!("/{}: {}", command, error));
+                app.set_status(format!("/{command}: {error}"));
                 vec![AppAction::Render]
             },
         }

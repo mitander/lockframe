@@ -11,7 +11,7 @@ use lockframe_proto::Frame;
 /// - Forwarding application intents (send message, create room, etc.)
 ///
 /// Generic over `I` (Instant type) to support both production
-/// (std::time::Instant) and simulation (tokio::time::Instant) environments.
+/// (`std::time::Instant`) and simulation (`tokio::time::Instant`) environments.
 #[derive(Debug, Clone)]
 pub enum ClientEvent<I = std::time::Instant> {
     /// Frame received from server.
@@ -70,29 +70,29 @@ pub enum ClientEvent<I = std::time::Instant> {
         member_ids: Vec<u64>,
     },
 
-    /// Publish our KeyPackage to the server registry.
+    /// Publish our `KeyPackage` to the server registry.
     ///
-    /// This makes our KeyPackage available for other clients to fetch
+    /// This makes our `KeyPackage` available for other clients to fetch
     /// when adding us to rooms.
     PublishKeyPackage,
 
-    /// Fetch a user's KeyPackage and add them to a room.
+    /// Fetch a user's `KeyPackage` and add them to a room.
     ///
-    /// Combines KeyPackage fetch + AddMembers in one operation.
+    /// Combines `KeyPackage` fetch + `AddMembers` in one operation.
     /// The client sends a fetch request, and when the response arrives,
     /// automatically adds the member to the specified room.
     FetchAndAddMember {
         /// Room to add the member to.
         room_id: RoomId,
-        /// User ID whose KeyPackage to fetch.
+        /// User ID whose `KeyPackage` to fetch.
         user_id: u64,
     },
 
     /// Application wants to join a room via external commit.
     ///
     /// This initiates an external join flow where the client:
-    /// 1. Requests GroupInfo from the server
-    /// 2. Creates an external commit using the GroupInfo
+    /// 1. Requests `GroupInfo` from the server
+    /// 2. Creates an external commit using the `GroupInfo`
     /// 3. Sends the external commit to the server
     ExternalJoin {
         /// Room to join.
@@ -167,7 +167,7 @@ pub enum ClientAction {
 
     /// Member was added to a room.
     ///
-    /// Emitted after successfully fetching a KeyPackage and adding
+    /// Emitted after successfully fetching a `KeyPackage` and adding
     /// the member via MLS.
     MemberAdded {
         /// Room the member was added to.
@@ -176,16 +176,16 @@ pub enum ClientAction {
         user_id: u64,
     },
 
-    /// KeyPackage was published successfully.
+    /// `KeyPackage` was published successfully.
     KeyPackagePublished,
 
-    /// No valid KeyPackage available for joining.
+    /// No valid `KeyPackage` available for joining.
     ///
     /// Emitted when a Welcome cannot be processed because there's no matching
-    /// pending KeyPackage state. The caller should trigger `PublishKeyPackage`
+    /// pending `KeyPackage` state. The caller should trigger `PublishKeyPackage`
     /// to make the client addable to rooms again.
     KeyPackageNeeded {
-        /// Reason the KeyPackage is needed.
+        /// Reason the `KeyPackage` is needed.
         reason: String,
     },
 

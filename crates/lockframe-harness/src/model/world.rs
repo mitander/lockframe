@@ -32,7 +32,7 @@ pub struct ObservableState {
 /// and tracking state for oracle comparison.
 #[derive(Debug, Clone)]
 pub struct ModelWorld {
-    /// Model clients (indexed by ClientId).
+    /// Model clients (indexed by `ClientId`).
     clients: Vec<ModelClient>,
     /// Model server.
     server: ModelServer,
@@ -107,7 +107,7 @@ impl ModelWorld {
 
         for client in &self.clients {
             let mut rooms: Vec<_> = client.rooms().collect();
-            rooms.sort();
+            rooms.sort_unstable();
             client_rooms.push(rooms.clone());
 
             let mut messages = Vec::new();
@@ -128,11 +128,11 @@ impl ModelWorld {
         let mut room_ids: Vec<_> = self
             .clients
             .iter()
-            .flat_map(|c| c.rooms())
+            .flat_map(super::client::ModelClient::rooms)
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
-        room_ids.sort();
+        room_ids.sort_unstable();
 
         for room_id in room_ids {
             if let Some(msgs) = self.server.messages(room_id) {
@@ -294,7 +294,7 @@ impl ModelWorld {
 
     /// Apply external join operation.
     ///
-    /// Joiner joins using GroupInfo (no inviter needed). Advances epoch.
+    /// Joiner joins using `GroupInfo` (no inviter needed). Advances epoch.
     fn apply_external_join(
         &mut self,
         joiner_id: ClientId,
@@ -431,7 +431,7 @@ impl ModelWorld {
 
             // Only advance epoch if there are remaining members (they process the removal)
             let has_remaining_members =
-                self.server.members(room_id).map(|mut m| m.any(|_| true)).unwrap_or(false);
+                self.server.members(room_id).is_some_and(|mut m| m.any(|_| true));
 
             if has_remaining_members {
                 self.server.advance_epoch(room_id);

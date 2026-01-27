@@ -1,7 +1,7 @@
 //! Chaos property tests for Storage implementations
 //!
 //! These tests verify that storage implementations maintain invariants even
-//! when wrapped in ChaoticStorage:
+//! when wrapped in `ChaoticStorage`:
 //! - Sequential writes succeed or fail atomically (no partial writes)
 //! - Reads after successful writes are consistent
 //! - MLS state storage is consistent
@@ -65,7 +65,7 @@ fn prop_storage_chaos_atomic_writes() {
                     break;
                 }
                 Err(e) => {
-                    panic!("Unexpected error: {:?}", e);
+                    panic!("Unexpected error: {e:?}");
                 }
             }
         }
@@ -284,7 +284,7 @@ fn prop_storage_conflict_detection() {
                 panic!("Gap write should have failed with Conflict error");
             }
             Err(e) => {
-                panic!("Expected Conflict error, got: {:?}", e);
+                panic!("Expected Conflict error, got: {e:?}");
             }
         }
 
@@ -470,7 +470,7 @@ fn prop_redb_storage_conflict_detection() {
                 prop_assert_eq!(got, gap_index);
             }
             Ok(()) => panic!("Gap should have failed"),
-            Err(e) => panic!("Expected Conflict, got: {:?}", e),
+            Err(e) => panic!("Expected Conflict, got: {e:?}"),
         }
     });
 }

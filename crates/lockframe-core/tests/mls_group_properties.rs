@@ -1,8 +1,8 @@
 //! Tests for MLS group commit lifecycle.
 //!
 //! These tests verify critical invariants:
-//! - Pending commit is tracked after add_members/remove_members
-//! - Epoch advances after merge_pending_commit
+//! - Pending commit is tracked after `add_members/remove_members`
+//! - Epoch advances after `merge_pending_commit`
 //! - Timeout detection works correctly
 
 use std::time::Duration;
@@ -12,7 +12,7 @@ use lockframe_core::{
     mls::{MlsAction, MlsGroup},
 };
 
-/// INVARIANT: After add_members, has_pending_commit returns true.
+/// INVARIANT: After `add_members`, `has_pending_commit` returns true.
 ///
 /// This test verifies that the commit lifecycle is properly initialized
 /// when adding members to a group.
@@ -32,7 +32,7 @@ fn add_members_sets_pending_commit() {
 
     // Generate a key package for the new member
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id)
+        MlsGroup::generate_key_package(env, new_member_id)
             .expect("key package generation should succeed");
 
     // Add the new member
@@ -50,7 +50,7 @@ fn add_members_sets_pending_commit() {
     assert!(has_commit, "add_members should produce SendCommit action");
 }
 
-/// INVARIANT: remove_members also sets pending commit.
+/// INVARIANT: `remove_members` also sets pending commit.
 #[test]
 fn remove_members_sets_pending_commit() {
     let env = MockEnv::with_crypto_rng();
@@ -63,7 +63,7 @@ fn remove_members_sets_pending_commit() {
     let (mut group, _) = MlsGroup::new(env.clone(), room_id, creator_id).unwrap();
 
     let (kp_bytes, _, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), member_to_add).unwrap();
+        MlsGroup::generate_key_package(env, member_to_add).unwrap();
 
     group.add_members_from_bytes(&[kp_bytes]).unwrap();
     group.merge_pending_commit().unwrap();
@@ -104,7 +104,7 @@ fn merge_commit_advances_epoch_by_one() {
 
     // Generate key package and add member
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id)
+        MlsGroup::generate_key_package(env, new_member_id)
             .expect("key package generation should succeed");
 
     group.add_members_from_bytes(&[key_package_bytes]).expect("add_members should succeed");
@@ -121,9 +121,7 @@ fn merge_commit_advances_epoch_by_one() {
     assert_eq!(
         epoch_after,
         epoch_before + 1,
-        "Epoch should increase by 1 after merge: {} -> {}",
-        epoch_before,
-        epoch_after
+        "Epoch should increase by 1 after merge: {epoch_before} -> {epoch_after}"
     );
 }
 
@@ -138,7 +136,7 @@ fn pending_commit_cleared_after_merge() {
     let (mut group, _) = MlsGroup::new(env.clone(), room_id, creator_id).unwrap();
 
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id).unwrap();
+        MlsGroup::generate_key_package(env, new_member_id).unwrap();
 
     group.add_members_from_bytes(&[key_package_bytes]).unwrap();
 
@@ -201,7 +199,7 @@ fn sequential_commits_advance_epoch_correctly() {
         let epoch_after = group.epoch();
 
         // INVARIANT: Each commit advances epoch by exactly 1
-        assert_eq!(epoch_after, epoch_before + 1, "Commit {} should advance epoch by 1", i);
+        assert_eq!(epoch_after, epoch_before + 1, "Commit {i} should advance epoch by 1");
     }
 
     // Final epoch should be 3 (one commit per member added)

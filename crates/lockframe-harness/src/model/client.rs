@@ -25,7 +25,7 @@ pub struct ModelMessage {
 struct ModelRoomState {
     /// Current epoch.
     epoch: u64,
-    /// Messages received (ordered by log_index).
+    /// Messages received (ordered by `log_index`).
     messages: Vec<ModelMessage>,
     /// Next expected log index for sending.
     next_send_index: u64,
@@ -78,7 +78,7 @@ impl ModelClient {
         self.rooms.keys().copied()
     }
 
-    /// Messages received in a room (ordered by log_index).
+    /// Messages received in a room (ordered by `log_index`).
     pub fn messages(&self, room_id: ModelRoomId) -> Option<&[ModelMessage]> {
         self.rooms.get(&room_id).map(|r| r.messages.as_slice())
     }
@@ -104,7 +104,7 @@ impl ModelClient {
 
     /// Send a message to a room.
     ///
-    /// Returns the log_index that will be assigned by the server.
+    /// Returns the `log_index` that will be assigned by the server.
     /// Note: The model client doesn't track sent content - that's the server's
     /// job.
     pub fn send_message(&mut self, room_id: ModelRoomId) -> Result<u64, OperationError> {
@@ -116,7 +116,7 @@ impl ModelClient {
         Ok(log_index)
     }
 
-    /// Receive a message (called by ModelWorld after server processes).
+    /// Receive a message (called by `ModelWorld` after server processes).
     pub fn receive_message(&mut self, room_id: ModelRoomId, message: ModelMessage) {
         if let Some(room) = self.rooms.get_mut(&room_id) {
             room.messages.push(message);

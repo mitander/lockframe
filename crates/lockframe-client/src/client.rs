@@ -40,7 +40,7 @@ const SENDER_KEY_SECRET_SIZE: usize = 32;
 /// Timeout for pending commits before requesting sync (30 seconds).
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Timeout for pending KeyPackage fetch operations (60 seconds).
+/// Timeout for pending `KeyPackage` fetch operations (60 seconds).
 const KEY_PACKAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Client identity.
@@ -48,7 +48,7 @@ const KEY_PACKAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// Owns the persistent cryptographic material that identifies this client
 /// across all room memberships.
 ///
-/// Note: MLS credential and signer are owned by MlsGroup per-room.
+/// Note: MLS credential and signer are owned by `MlsGroup` per-room.
 /// This may be refactored when we implement proper identity management.
 pub struct ClientIdentity {
     /// Stable sender ID used in frame headers.
@@ -74,10 +74,10 @@ struct RoomState<E: Environment> {
     my_leaf_index: u32,
 }
 
-/// State stored between KeyPackage generation and Welcome receipt.
+/// State stored between `KeyPackage` generation and Welcome receipt.
 type PendingJoin<E> = PendingJoinState<E>;
 
-/// Client for interacting with LockFrame server.
+/// Client for interacting with `LockFrame` server.
 pub struct Client<E: Environment> {
     /// Environment for randomness, timing, etc.
     env: E,
@@ -89,14 +89,14 @@ pub struct Client<E: Environment> {
     rooms: HashMap<RoomId, RoomState<E>>,
 
     /// Pending joins awaiting Welcome frames.
-    /// Maps KeyPackage hash to pending state.
+    /// Maps `KeyPackage` hash to pending state.
     pending_joins: HashMap<Vec<u8>, PendingJoin<E>>,
 
     /// Pending add member operations.
-    /// Maps (room_id, user_id) to timestamp for completing the add.
+    /// Maps (`room_id`, `user_id`) to timestamp for completing the add.
     pending_adds: HashMap<(RoomId, u64), E::Instant>,
 
-    /// Pending external joins awaiting GroupInfo responses.
+    /// Pending external joins awaiting `GroupInfo` responses.
     pending_external_joins: HashSet<RoomId>,
 }
 
@@ -146,21 +146,21 @@ impl<E: Environment> Client<E> {
 
     /// Member IDs in a room. `None` if not a member or export fails.
     ///
-    /// Returns all member IDs (sender_ids) currently in the MLS group.
+    /// Returns all member IDs (`sender_ids`) currently in the MLS group.
     pub fn member_ids(&self, room_id: RoomId) -> Option<Vec<u64>> {
         self.rooms
             .get(&room_id)
             .and_then(|r| r.mls_group.export_group_state().ok())
-            .map(|state| state.members.clone())
+            .map(|state| state.members)
     }
 
-    /// Generate a KeyPackage for this client to join a room.
+    /// Generate a `KeyPackage` for this client to join a room.
     ///
-    /// The returned KeyPackage should be sent to the room creator who will
+    /// The returned `KeyPackage` should be sent to the room creator who will
     /// add this client via `AddMembers`. The client stores the cryptographic
     /// state internally and uses it when the Welcome message arrives.
     ///
-    /// Returns (serialized KeyPackage bytes, KeyPackage hash ref).
+    /// Returns (serialized `KeyPackage` bytes, `KeyPackage` hash ref).
     pub fn generate_key_package(&mut self) -> Result<(Vec<u8>, Vec<u8>), ClientError> {
         let (kp_bytes, hash_ref, pending_state) =
             MlsGroup::generate_key_package(self.env.clone(), self.identity.sender_id)
@@ -293,7 +293,7 @@ impl<E: Environment> Client<E> {
                 Ok(vec![])
             },
             Opcode::Error => Ok(vec![ClientAction::Log {
-                message: format!("Server error: room_id={:x}", room_id),
+                message: format!("Server error: room_id={room_id:x}"),
             }]),
             Opcode::AppMessage => self.handle_app_message(room_id, frame),
             Opcode::Commit | Opcode::ExternalCommit => self.handle_commit(room_id, frame),
@@ -307,7 +307,7 @@ impl<E: Environment> Client<E> {
 
                 let mls_actions = room
                     .mls_group
-                    .process_message(frame.clone())
+                    .process_message(frame)
                     .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
                 Ok(self.convert_mls_actions(room_id, mls_actions))
@@ -336,8 +336,7 @@ impl<E: Environment> Client<E> {
             return Ok(vec![
                 ClientAction::Log {
                     message: format!(
-                        "Epoch mismatch for room {:x}: frame {}, room {}. Requesting sync.",
-                        room_id, frame_epoch, room_epoch
+                        "Epoch mismatch for room {room_id:x}: frame {frame_epoch}, room {room_epoch}. Requesting sync."
                     ),
                 },
                 ClientAction::RequestSync {
@@ -397,15 +396,13 @@ impl<E: Environment> Client<E> {
         room_id: RoomId,
         frame: Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
-        if !self.rooms.contains_key(&room_id) {
-            return Err(ClientError::RoomNotFound { room_id });
-        }
-
         let is_own_commit = frame.header.sender_id() == self.identity.sender_id;
 
-        let mut actions = {
-            let room = self.rooms.get_mut(&room_id).expect("checked above");
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return Err(ClientError::RoomNotFound { room_id });
+        };
 
+        let mut actions = {
             if is_own_commit && room.mls_group.has_pending_commit() {
                 let mls_actions = room
                     .mls_group
@@ -417,8 +414,7 @@ impl<E: Environment> Client<E> {
                 // skip processing entirely to avoid reinitializing sender keys.
                 return Ok(vec![ClientAction::Log {
                     message: format!(
-                        "Ignoring own external commit for room {:032x} (already applied)",
-                        room_id
+                        "Ignoring own external commit for room {room_id:032x} (already applied)"
                     ),
                 }]);
             } else {
@@ -427,7 +423,7 @@ impl<E: Environment> Client<E> {
                 // before the original send operation consumed the pending commit.
                 let mls_actions = room
                     .mls_group
-                    .process_message(frame.clone())
+                    .process_message(frame)
                     .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
                 self.convert_mls_actions(room_id, mls_actions)
@@ -459,11 +455,11 @@ impl<E: Environment> Client<E> {
         Ok(actions)
     }
 
-    /// Try to join a room using a pending KeyPackage state.
+    /// Try to join a room using a pending `KeyPackage` state.
     ///
-    /// Tries each pending KeyPackage state until one succeeds. On success, the
-    /// matching state is consumed. On failure, all tried states are consumed
-    /// (caller should generate new KeyPackages if needed).
+    /// Tries each pending `KeyPackage` state until one succeeds. On success,
+    /// the matching state is consumed. On failure, all tried states are
+    /// consumed (caller should generate new `KeyPackages` if needed).
     fn try_join_from_welcome(
         &mut self,
         room_id: RoomId,
@@ -502,7 +498,7 @@ impl<E: Environment> Client<E> {
         Err(ClientError::Mls {
             reason: format!(
                 "No pending KeyPackage matched this Welcome: {}",
-                last_error.map(|e| e.to_string()).unwrap_or_else(|| "unknown".to_string())
+                last_error.map_or_else(|| "unknown".to_string(), |e| e.to_string())
             ),
         })
     }
@@ -510,8 +506,9 @@ impl<E: Environment> Client<E> {
     /// Handle incoming Welcome frame.
     ///
     /// When we receive a Welcome message from another member (who added us),
-    /// we process it to join the group. If no matching KeyPackage is available,
-    /// emits `KeyPackageNeeded` so the caller can trigger republishing.
+    /// we process it to join the group. If no matching `KeyPackage` is
+    /// available, emits `KeyPackageNeeded` so the caller can trigger
+    /// republishing.
     fn handle_welcome(
         &mut self,
         room_id: RoomId,
@@ -527,7 +524,7 @@ impl<E: Environment> Client<E> {
                 // No matching KeyPackage - signal caller to republish
                 return Ok(vec![
                     ClientAction::Log {
-                        message: format!("Welcome for room {:x} failed: {}", room_id, e),
+                        message: format!("Welcome for room {room_id:x} failed: {e}"),
                     },
                     ClientAction::KeyPackageNeeded { reason: e.to_string() },
                 ]);
@@ -568,7 +565,7 @@ impl<E: Environment> Client<E> {
 
     /// Handle join room request via Welcome message.
     ///
-    /// This is the application-initiated join (via ClientEvent::JoinRoom).
+    /// This is the application-initiated join (via `ClientEvent::JoinRoom`).
     /// The Welcome message should have been received out-of-band.
     fn handle_join_room(
         &mut self,
@@ -599,7 +596,7 @@ impl<E: Environment> Client<E> {
     ///
     /// Processes frames from the sync response in order to catch up
     /// to the server's epoch. Each frame is decoded and processed
-    /// sequentially. If `has_more` is true, emits another RequestSync action.
+    /// sequentially. If `has_more` is true, emits another `RequestSync` action.
     fn handle_sync_response(
         &mut self,
         room_id: RoomId,
@@ -640,7 +637,7 @@ impl<E: Environment> Client<E> {
 
         if sync_response.has_more {
             // More frames avaliable
-            let current_epoch = self.rooms.get(&room_id).map(|r| r.mls_group.epoch()).unwrap_or(0);
+            let current_epoch = self.rooms.get(&room_id).map_or(0, |r| r.mls_group.epoch());
 
             all_actions.push(ClientAction::RequestSync {
                 room_id,
@@ -658,7 +655,7 @@ impl<E: Environment> Client<E> {
             all_actions.push(ClientAction::Log {
                 message: format!(
                     "Sync complete for room {room_id:x}, now at epoch {}",
-                    self.rooms.get(&room_id).map(|r| r.mls_group.epoch()).unwrap_or(0)
+                    self.rooms.get(&room_id).map_or(0, |r| r.mls_group.epoch())
                 ),
             });
         }
@@ -668,8 +665,8 @@ impl<E: Environment> Client<E> {
 
     /// Handle add members request.
     ///
-    /// Adds members to a room using their serialized KeyPackages.
-    /// Delegates to MlsGroup::add_members_from_bytes.
+    /// Adds members to a room using their serialized `KeyPackages`.
+    /// Delegates to `MlsGroup::add_members_from_bytes`.
     fn handle_add_members(
         &mut self,
         room_id: RoomId,
@@ -698,9 +695,9 @@ impl<E: Environment> Client<E> {
         Ok(self.convert_mls_actions(room_id, mls_actions))
     }
 
-    /// Handle publish KeyPackage request.
+    /// Handle publish `KeyPackage` request.
     ///
-    /// Generates a KeyPackage and sends it to the server registry.
+    /// Generates a `KeyPackage` and sends it to the server registry.
     fn handle_publish_key_package(&mut self) -> Result<Vec<ClientAction>, ClientError> {
         let (kp_bytes, hash_ref) = self.generate_key_package()?;
 
@@ -719,7 +716,7 @@ impl<E: Environment> Client<E> {
 
     /// Handle fetch and add member request.
     ///
-    /// Sends a KeyPackage fetch request for the specified user.
+    /// Sends a `KeyPackage` fetch request for the specified user.
     /// When the response arrives, the member will be added to the room.
     fn handle_fetch_and_add_member(
         &mut self,
@@ -740,16 +737,13 @@ impl<E: Environment> Client<E> {
             .map_err(|e| ClientError::InvalidFrame { reason: e.to_string() })?;
 
         Ok(vec![ClientAction::Send(frame), ClientAction::Log {
-            message: format!(
-                "Fetching KeyPackage for user {} to add to room {:x}",
-                user_id, room_id
-            ),
+            message: format!("Fetching KeyPackage for user {user_id} to add to room {room_id:x}"),
         }])
     }
 
-    /// Handle KeyPackage fetch response.
+    /// Handle `KeyPackage` fetch response.
     ///
-    /// Completes a pending add operation by using the fetched KeyPackage.
+    /// Completes a pending add operation by using the fetched `KeyPackage`.
     fn handle_key_package_fetch_response(
         &mut self,
         frame: Frame,
@@ -790,19 +784,16 @@ impl<E: Environment> Client<E> {
         }
 
         let mut actions = Vec::new();
-        let key_package_bytes = payload.key_package_bytes.clone();
+        let key_package_bytes = payload.key_package_bytes;
 
         for (room_id, user_id) in matching_entries {
             self.pending_adds.remove(&(room_id, user_id));
 
-            let room = match self.rooms.get_mut(&room_id) {
-                Some(room) => room,
-                None => {
-                    actions.push(ClientAction::Log {
-                        message: format!("Room {:x} not found for pending add, skipping", room_id),
-                    });
-                    continue;
-                },
+            let Some(room) = self.rooms.get_mut(&room_id) else {
+                actions.push(ClientAction::Log {
+                    message: format!("Room {room_id:x} not found for pending add, skipping"),
+                });
+                continue;
             };
 
             match room.mls_group.add_members_from_bytes(&[key_package_bytes.clone()]) {
@@ -811,18 +802,14 @@ impl<E: Environment> Client<E> {
                     room_actions.push(ClientAction::MemberAdded { room_id, user_id });
                     room_actions.push(ClientAction::Log {
                         message: format!(
-                            "Added user {} to room {:x} using fetched KeyPackage",
-                            user_id, room_id
+                            "Added user {user_id} to room {room_id:x} using fetched KeyPackage"
                         ),
                     });
                     actions.extend(room_actions);
                 },
                 Err(e) => {
                     actions.push(ClientAction::Log {
-                        message: format!(
-                            "Failed to add user {} to room {:x}: {}",
-                            user_id, room_id, e
-                        ),
+                        message: format!("Failed to add user {user_id} to room {room_id:x}: {e}"),
                     });
                 },
             }
@@ -833,7 +820,7 @@ impl<E: Environment> Client<E> {
 
     /// Handle external join request.
     ///
-    /// Sends a GroupInfoRequest to the server. When the response arrives,
+    /// Sends a `GroupInfoRequest` to the server. When the response arrives,
     /// creates an external commit to join the room.
     fn handle_external_join(&mut self, room_id: RoomId) -> Result<Vec<ClientAction>, ClientError> {
         if self.rooms.contains_key(&room_id) {
@@ -849,11 +836,11 @@ impl<E: Environment> Client<E> {
             .map_err(|e| ClientError::InvalidFrame { reason: e.to_string() })?;
 
         Ok(vec![ClientAction::Send(frame), ClientAction::Log {
-            message: format!("Requesting GroupInfo to join room {:032x}", room_id),
+            message: format!("Requesting GroupInfo to join room {room_id:032x}"),
         }])
     }
 
-    /// Handle GroupInfo response.
+    /// Handle `GroupInfo` response.
     ///
     /// Completes a pending external join by creating an external commit.
     fn handle_group_info_response(
@@ -871,7 +858,7 @@ impl<E: Environment> Client<E> {
 
         if !self.pending_external_joins.remove(&room_id) {
             return Err(ClientError::InvalidFrame {
-                reason: format!("No pending external join for room {:032x}", room_id),
+                reason: format!("No pending external join for room {room_id:032x}"),
             });
         }
 
@@ -912,7 +899,7 @@ impl<E: Environment> Client<E> {
     /// Handle tick (timeout processing).
     ///
     /// Checks all rooms for pending commits that have timed out.
-    /// Also cleans up stale pending KeyPackage fetch operations.
+    /// Also cleans up stale pending `KeyPackage` fetch operations.
     /// For rooms with timed-out commits, clears the pending state and emits
     /// `RequestSync` actions.
     fn handle_tick(&mut self, now: E::Instant) -> Result<Vec<ClientAction>, ClientError> {
@@ -927,11 +914,10 @@ impl<E: Environment> Client<E> {
 
         for (room_id, user_id) in stale_adds {
             // Remove stale pending fetch operations
-            if let Some(_) = self.pending_adds.remove(&(room_id, user_id)) {
+            if self.pending_adds.remove(&(room_id, user_id)).is_some() {
                 actions.push(ClientAction::Log {
                     message: format!(
-                        "KeyPackage fetch timeout for user {} in room {:x}, removing pending operation",
-                        user_id, room_id
+                        "KeyPackage fetch timeout for user {user_id} in room {room_id:x}, removing pending operation"
                     ),
                 });
             }
@@ -1002,7 +988,7 @@ impl<E: Environment> Client<E> {
                     {
                         Ok(frame) => Some(ClientAction::Send(frame)),
                         Err(e) => Some(ClientAction::Log {
-                            message: format!("Failed to create GroupInfo frame: {:?}", e),
+                            message: format!("Failed to create GroupInfo frame: {e:?}"),
                         }),
                     }
                 },
@@ -1289,11 +1275,11 @@ mod tests {
         // Verify both rooms were processed and failed with invalid KeyPackage
         assert!(actions.iter().any(|action| {
             matches!(action, ClientAction::Log { message } if
-                message.contains(&format!("Failed to add user {} to room {:x}", user_id, room_id1)))
+                message.contains(&format!("Failed to add user {user_id} to room {room_id1:x}")))
         }));
         assert!(actions.iter().any(|action| {
             matches!(action, ClientAction::Log { message } if
-                message.contains(&format!("Failed to add user {} to room {:x}", user_id, room_id2)))
+                message.contains(&format!("Failed to add user {user_id} to room {room_id2:x}")))
         }));
 
         // Verify exactly 2 failure actions (one for each room)
@@ -1321,8 +1307,7 @@ mod tests {
         // Should return KeyPackageNeeded, not an error
         assert!(
             actions.iter().any(|a| matches!(a, ClientAction::KeyPackageNeeded { .. })),
-            "Expected KeyPackageNeeded action, got: {:?}",
-            actions
+            "Expected KeyPackageNeeded action, got: {actions:?}"
         );
 
         // Should also log the failure
@@ -1354,8 +1339,7 @@ mod tests {
         // Should return KeyPackageNeeded for recovery
         assert!(
             actions.iter().any(|a| matches!(a, ClientAction::KeyPackageNeeded { .. })),
-            "Expected KeyPackageNeeded action, got: {:?}",
-            actions
+            "Expected KeyPackageNeeded action, got: {actions:?}"
         );
     }
 

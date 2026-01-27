@@ -1,8 +1,8 @@
 //! Simulation server wrapper for testing with turmoil.
 //!
-//! SimServer wraps ServerDriver for integration with turmoil's deterministic
-//! simulation. It uses SimEnv with MemoryStorage for the action-based core,
-//! turmoil TCP for networking, and tracks connection state in a HashMap.
+//! `SimServer` wraps `ServerDriver` for integration with turmoil's deterministic
+//! simulation. It uses `SimEnv` with `MemoryStorage` for the action-based core,
+//! turmoil TCP for networking, and tracks connection state in a `HashMap`.
 
 use std::{
     collections::HashMap,
@@ -40,7 +40,7 @@ pub struct SimServer {
     driver: ServerDriver<SimEnv, MemoryStorage>,
     /// TCP listener for accepting connections
     listener: TcpListener,
-    /// Connection state (session_id → state)
+    /// Connection state (`session_id` → state)
     connections: HashMap<u64, SimConnectionState>,
     /// Next connection ID
     next_session_id: u64,
@@ -74,7 +74,7 @@ impl SimServer {
         let actions = self
             .driver
             .process_event(ServerEvent::ConnectionAccepted { session_id })
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         let (_reader, writer) = tokio::io::split(stream);
         self.connections.insert(session_id, SimConnectionState { writer });
@@ -90,7 +90,7 @@ impl SimServer {
         let actions = self
             .driver
             .process_event(ServerEvent::Tick)
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         self.execute_actions(actions).await
     }
@@ -173,7 +173,7 @@ impl SimServer {
         let actions = self
             .driver
             .process_event(ServerEvent::FrameReceived { session_id, frame })
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         self.execute_actions(actions).await
     }
@@ -185,7 +185,7 @@ impl SimServer {
         let actions = self
             .driver
             .create_room(room_id, creator_session_id)
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         for action in actions {
             if let ServerAction::Log { level, message, .. } = action {
@@ -229,7 +229,7 @@ impl SimServer {
 
 /// A simplified server handle for tests that don't need full async operation.
 ///
-/// Wraps SimServer in an Arc<Mutex<>> for shared access in tests.
+/// Wraps `SimServer` in an Arc<Mutex<>> for shared access in tests.
 pub type SharedSimServer = Arc<Mutex<SimServer>>;
 
 /// Create a shared server for testing.

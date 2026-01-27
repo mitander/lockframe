@@ -49,7 +49,7 @@ impl MlsValidator {
         let frame_epoch = frame.header.epoch();
         if frame_epoch != current_epoch {
             return Ok(ValidationResult::Reject {
-                reason: format!("epoch mismatch: expected {}, got {}", current_epoch, frame_epoch),
+                reason: format!("epoch mismatch: expected {current_epoch}, got {frame_epoch}"),
             });
         }
 
@@ -58,7 +58,7 @@ impl MlsValidator {
         let sender_id = frame.header.sender_id();
         if !group_state.is_member(sender_id) {
             return Ok(ValidationResult::Reject {
-                reason: format!("sender {} not in group", sender_id),
+                reason: format!("sender {sender_id} not in group"),
             });
         }
 
@@ -82,8 +82,7 @@ impl MlsValidator {
             None => {
                 return Ok(ValidationResult::Reject {
                     reason: format!(
-                        "member {} has no signature key (group state inconsistency)",
-                        sender_id
+                        "member {sender_id} has no signature key (group state inconsistency)"
                     ),
                 });
             },
@@ -103,7 +102,7 @@ impl MlsValidator {
         let signed_data = frame.header.signing_data();
         if verifying_key.verify(&signed_data, &signature).is_err() {
             return Ok(ValidationResult::Reject {
-                reason: format!("signature verification failed for sender {}", sender_id),
+                reason: format!("signature verification failed for sender {sender_id}"),
             });
         }
 
@@ -126,7 +125,7 @@ impl MlsValidator {
         let frame_epoch = frame.header.epoch();
         if frame_epoch != 0 {
             return Ok(ValidationResult::Reject {
-                reason: format!("no MLS state for room, expected epoch 0, got {}", frame_epoch),
+                reason: format!("no MLS state for room, expected epoch 0, got {frame_epoch}"),
             });
         }
 

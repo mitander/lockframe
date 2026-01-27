@@ -46,10 +46,10 @@ pub enum AppAction {
         content: Vec<u8>,
     },
 
-    /// Publish KeyPackage to server.
+    /// Publish `KeyPackage` to server.
     PublishKeyPackage,
 
-    /// Add member by fetching their KeyPackage.
+    /// Add member by fetching their `KeyPackage`.
     AddMember {
         /// 128-bit room UUID.
         room_id: RoomId,

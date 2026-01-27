@@ -31,7 +31,7 @@ pub struct MlsGroupState {
     /// Tree hash of the current ratchet tree
     ///
     /// Used for consistency checks (all clients should converge to same
-    /// tree_hash)
+    /// `tree_hash`)
     pub tree_hash: [u8; 32],
 
     /// List of member IDs currently in the group

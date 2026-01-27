@@ -37,7 +37,7 @@
 //! - Message key disposal: Keys are zeroized immediately after single use
 //!
 //! Sender Isolation:
-//! - Each sender has unique keys derived from their sender_index
+//! - Each sender has unique keys derived from their `sender_index`
 //! - Compromising one sender's ratchet doesn't expose other senders' messages
 //! - MLS provides sender authentication at the control plane level
 //!

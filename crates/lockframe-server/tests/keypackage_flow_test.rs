@@ -1,8 +1,8 @@
-//! Integration tests for KeyPackage publish/fetch flow.
+//! Integration tests for `KeyPackage` publish/fetch flow.
 //!
 //! Tests the complete multi-client join flow:
-//! 1. Client B publishes KeyPackage to server
-//! 2. Client A fetches KeyPackage for user_id B
+//! 1. Client B publishes `KeyPackage` to server
+//! 2. Client A fetches `KeyPackage` for `user_id` B
 //! 3. Server routes Welcome to B after A adds them
 
 use lockframe_core::env::test_utils::MockEnv;
@@ -19,7 +19,7 @@ fn create_driver() -> ServerDriver<MockEnv, MemoryStorage> {
     ServerDriver::new(env, storage, config)
 }
 
-/// Test that fetching a non-existent KeyPackage returns an error.
+/// Test that fetching a non-existent `KeyPackage` returns an error.
 #[test]
 fn keypackage_fetch_not_found() {
     let mut driver = create_driver();
@@ -78,7 +78,7 @@ fn keypackage_fetch_not_found() {
     assert_eq!(error_frame.header.opcode_enum(), Some(Opcode::Error));
 }
 
-/// Test that KeyPackage is consumed after fetch (one-time use).
+/// Test that `KeyPackage` is consumed after fetch (one-time use).
 #[test]
 fn keypackage_consumed_after_fetch() {
     let mut driver = create_driver();

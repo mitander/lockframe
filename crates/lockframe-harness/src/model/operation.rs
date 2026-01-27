@@ -56,8 +56,8 @@ pub enum Operation {
 
     /// Join a room via external commit.
     ///
-    /// The joiner creates an external commit using the room's GroupInfo.
-    /// This is different from AddMember where an existing member invites.
+    /// The joiner creates an external commit using the room's `GroupInfo`.
+    /// This is different from `AddMember` where an existing member invites.
     ExternalJoin {
         /// Client joining the room.
         joiner_id: ClientId,
@@ -168,10 +168,10 @@ pub enum OperationError {
     /// Cannot add member who is already in the room.
     AlreadyMember,
 
-    /// Cannot remove self (use LeaveRoom instead).
+    /// Cannot remove self (use `LeaveRoom` instead).
     CannotRemoveSelf,
 
-    /// No GroupInfo available for external join.
+    /// No `GroupInfo` available for external join.
     NoGroupInfo,
 
     /// Epoch mismatch (message from wrong epoch).
@@ -226,7 +226,7 @@ impl OperationError {
 impl OperationResult {
     /// Check if operation succeeded.
     pub fn is_ok(&self) -> bool {
-        matches!(self, OperationResult::Ok)
+        matches!(self, Self::Ok)
     }
 
     /// Check if operation failed.
@@ -237,8 +237,8 @@ impl OperationResult {
     /// Get error properties if this is an error.
     pub fn error_properties(&self) -> Option<ErrorProperties> {
         match self {
-            OperationResult::Ok => None,
-            OperationResult::Error(e) => Some(e.properties()),
+            Self::Ok => None,
+            Self::Error(e) => Some(e.properties()),
         }
     }
 }

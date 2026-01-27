@@ -24,8 +24,7 @@ fn optimal_handshake_message_count() {
 
             assert_eq!(
                 total_messages, 2,
-                "Handshake inefficient: expected 2 messages (Hello + HelloReply), got {}",
-                total_messages
+                "Handshake inefficient: expected 2 messages (Hello + HelloReply), got {total_messages}"
             );
 
             // Individual counts must also be exactly 1 each
@@ -40,7 +39,7 @@ fn optimal_handshake_message_count() {
         }))
         .run();
 
-    assert!(result.is_ok(), "Optimality oracle failed: {:?}", result);
+    assert!(result.is_ok(), "Optimality oracle failed: {result:?}");
 }
 
 #[test]
@@ -83,7 +82,7 @@ fn optimal_heartbeat_frequency() {
         }))
         .run();
 
-    assert!(result.is_ok(), "Heartbeat optimality oracle failed: {:?}", result);
+    assert!(result.is_ok(), "Heartbeat optimality oracle failed: {result:?}");
 }
 
 #[test]
@@ -95,7 +94,7 @@ fn optimal_idle_timeout_detection() {
 
     // Test 1: Just before timeout - should still be connected
     let result_before = Scenario::new()
-        .with_time_advance(idle_timeout - Duration::from_secs(1))
+        .with_time_advance(idle_timeout.checked_sub(Duration::from_secs(1)).unwrap())
         .oracle(Box::new(|world| {
             // Must NOT timeout prematurely
             assert_eq!(

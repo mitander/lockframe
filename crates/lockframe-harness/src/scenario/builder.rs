@@ -53,8 +53,8 @@ impl Scenario {
     /// This allows testing timeout behavior. The scenario will:
     /// 1. Execute the handshake
     /// 2. Advance time by the specified duration
-    /// 3. Call tick() on both connections
-    /// 4. Process any resulting actions (Close, SendFrame, etc.)
+    /// 3. Call `tick()` on both connections
+    /// 4. Process any resulting actions (Close, `SendFrame`, etc.)
     /// 5. Run the oracle
     pub fn with_time_advance(mut self, duration: Duration) -> Self {
         self.time_advance = Some(duration);
@@ -87,10 +87,10 @@ impl RunnableScenario {
     ///
     /// Performs a complete handshake between client and server:
     /// 1. Client sends Hello
-    /// 2. Server handles Hello and sends HelloReply
-    /// 3. Client handles HelloReply and transitions to Authenticated
+    /// 2. Server handles Hello and sends `HelloReply`
+    /// 3. Client handles `HelloReply` and transitions to Authenticated
     ///
-    /// If time_advance is set, advances time and calls tick() on both
+    /// If `time_advance` is set, advances time and calls `tick()` on both
     /// connections to process timeouts and heartbeats.
     ///
     /// Finally, the oracle is invoked to verify global consistency.
@@ -123,7 +123,7 @@ impl RunnableScenario {
         let hello_frame = {
             let client = world.client_mut();
             let actions =
-                client.send_hello(now).map_err(|e| format!("client send_hello failed: {}", e))?;
+                client.send_hello(now).map_err(|e| format!("client send_hello failed: {e}"))?;
 
             match actions.as_slice() {
                 [ConnectionAction::SendFrame(frame)] => frame.clone(),
@@ -138,7 +138,7 @@ impl RunnableScenario {
             let server = world.server_mut();
             let actions = server
                 .handle_frame(&hello_frame, now)
-                .map_err(|e| format!("server handle_frame(Hello) failed: {}", e))?;
+                .map_err(|e| format!("server handle_frame(Hello) failed: {e}"))?;
 
             match actions.as_slice() {
                 [ConnectionAction::SendFrame(frame)] => frame.clone(),
@@ -157,7 +157,7 @@ impl RunnableScenario {
             let client = world.client_mut();
             let actions = client
                 .handle_frame(&hello_reply_frame, now)
-                .map_err(|e| format!("client handle_frame(HelloReply) failed: {}", e))?;
+                .map_err(|e| format!("client handle_frame(HelloReply) failed: {e}"))?;
 
             if !actions.is_empty() {
                 return Err(
@@ -180,7 +180,7 @@ impl RunnableScenario {
         Ok(())
     }
 
-    /// Process actions returned by tick() or other connection methods.
+    /// Process actions returned by `tick()` or other connection methods.
     fn process_actions(
         &self,
         world: &mut World<Instant>,

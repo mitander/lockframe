@@ -69,7 +69,7 @@ impl TerminalDriver {
         })
     }
 
-    /// Convert crossterm KeyCode to KeyInput.
+    /// Convert crossterm `KeyCode` to `KeyInput`.
     fn convert_key(code: KeyCode) -> Option<KeyInput> {
         match code {
             KeyCode::Char(c) => Some(KeyInput::Char(c)),
@@ -117,7 +117,7 @@ impl Driver for TerminalDriver {
             }
 
             // Tick timeout
-            _ = tokio::time::sleep(timeout) => {
+            () = tokio::time::sleep(timeout) => {
                 Ok(app.handle(AppEvent::Tick))
             }
         }

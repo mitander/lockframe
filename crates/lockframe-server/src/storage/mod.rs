@@ -77,9 +77,9 @@ pub trait Storage: Clone + Send + Sync + 'static {
     /// Returns `None` if no state exists for this room.
     fn load_mls_state(&self, room_id: u128) -> Result<Option<MlsGroupState>, StorageError>;
 
-    /// Store GroupInfo for external joiners.
+    /// Store `GroupInfo` for external joiners.
     ///
-    /// GroupInfo is updated after each commit so external joiners have
+    /// `GroupInfo` is updated after each commit so external joiners have
     /// current group state for creating external commits.
     fn store_group_info(
         &self,
@@ -88,9 +88,9 @@ pub trait Storage: Clone + Send + Sync + 'static {
         group_info: &[u8],
     ) -> Result<(), StorageError>;
 
-    /// Load GroupInfo for external joiners.
+    /// Load `GroupInfo` for external joiners.
     ///
-    /// Returns GroupInfo `(epoch, group_info_bytes)` or `None` if room has no
+    /// Returns `GroupInfo` `(epoch, group_info_bytes)` or `None` if room has no
     /// group info.
     fn load_group_info(&self, room_id: u128) -> Result<Option<(u64, Vec<u8>)>, StorageError>;
 

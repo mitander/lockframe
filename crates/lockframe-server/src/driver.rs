@@ -1,7 +1,7 @@
 //! Server driver.
 //!
-//! Ties together connection state machines, RoomManager (MLS validation +
-//! sequencing), ConnectionRegistry (session-to-room mapping), and storage.
+//! Ties together connection state machines, `RoomManager` (MLS validation +
+//! sequencing), `ConnectionRegistry` (session-to-room mapping), and storage.
 
 use std::collections::HashMap;
 
@@ -143,13 +143,13 @@ where
     E: Environment,
     S: Storage,
 {
-    /// Connection state machines (session_id → Connection)
+    /// Connection state machines (`session_id` → Connection)
     connections: HashMap<u64, Connection<E::Instant>>,
     /// Session/room registry
     pub(crate) registry: ConnectionRegistry,
     /// Room manager (routing + sequencing)
     room_manager: RoomManager,
-    /// KeyPackage registry for publish/fetch operations
+    /// `KeyPackage` registry for publish/fetch operations
     key_package_registry: KeyPackageRegistry,
     /// Storage backend
     storage: S,
@@ -220,7 +220,7 @@ where
 
         Ok(vec![ServerAction::Log {
             level: LogLevel::Debug,
-            message: format!("connection {} accepted, session_id={}", session_id, session_id),
+            message: format!("connection {session_id} accepted, session_id={session_id}"),
             timestamp: now,
         }])
     }
@@ -241,10 +241,7 @@ where
         let opcode = frame.header.opcode_enum();
 
         match opcode {
-            Some(Opcode::Hello)
-            | Some(Opcode::Ping)
-            | Some(Opcode::Pong)
-            | Some(Opcode::Goodbye) => {
+            Some(Opcode::Hello | Opcode::Ping | Opcode::Pong | Opcode::Goodbye) => {
                 // Session-layer frames
                 let conn_actions = conn.handle_frame(&frame, now).map_err(|e| {
                     ServerError::ConnectionFailed { session_id, reason: e.to_string() }
@@ -312,8 +309,7 @@ where
                     actions.push(ServerAction::Log {
                         level: LogLevel::Debug,
                         message: format!(
-                            "session {} (user {}) subscribed to room {:032x} via Welcome",
-                            recipient_session_id, recipient_id, room_id
+                            "session {recipient_session_id} (user {recipient_id}) subscribed to room {room_id:032x} via Welcome"
                         ),
                         timestamp: now,
                     });
@@ -327,8 +323,7 @@ where
                     actions.push(ServerAction::Log {
                         level: LogLevel::Warn,
                         message: format!(
-                            "Welcome recipient {} not connected, cannot subscribe to room {:032x}",
-                            recipient_id, room_id
+                            "Welcome recipient {recipient_id} not connected, cannot subscribe to room {room_id:032x}"
                         ),
                         timestamp: now,
                     });
@@ -362,8 +357,7 @@ where
                     actions.push(ServerAction::Log {
                         level: LogLevel::Debug,
                         message: format!(
-                            "session {} subscribed to room {:032x} via ExternalCommit",
-                            session_id, room_id
+                            "session {session_id} subscribed to room {room_id:032x} via ExternalCommit"
                         ),
                         timestamp: now,
                     });
@@ -390,7 +384,7 @@ where
         let now = self.env.now();
 
         let result = (|| -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
-            let payload = Payload::from_frame(frame.clone())?;
+            let payload = Payload::from_frame(&frame.clone())?;
             let (from_log_index, limit) = match payload {
                 Payload::SyncRequest(req) => (req.from_log_index, req.limit as usize),
                 _ => {
@@ -446,19 +440,19 @@ where
                 frame.header.set_room_id(room_id);
                 vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                     level: LogLevel::Warn,
-                    message: format!("sync request failed for {}: {}", session_id, error_msg),
+                    message: format!("sync request failed for {session_id}: {error_msg}"),
                     timestamp: self.env.now(),
                 }]
             },
             Err(e) => vec![ServerAction::Log {
                 level: LogLevel::Error,
-                message: format!("failed to encode error response: {}", e),
+                message: format!("failed to encode error response: {e}"),
                 timestamp: self.env.now(),
             }],
         }
     }
 
-    /// Handle KeyPackage publish request.
+    /// Handle `KeyPackage` publish request.
     fn handle_key_package_publish(
         &mut self,
         session_id: u64,
@@ -466,55 +460,48 @@ where
     ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
 
-        let user_id = match self.registry.sessions(session_id) {
-            Some(info) => match info.user_id {
-                Some(id) => id,
-                None => {
-                    let error =
-                        Payload::Error(ErrorPayload::frame_rejected("Session not authenticated"));
-                    return match error.into_frame(FrameHeader::new(Opcode::Error)) {
-                        Ok(frame) => vec![
-                            ServerAction::SendToSession { session_id, frame },
-                            ServerAction::Log {
-                                level: LogLevel::Warn,
-                                message: format!(
-                                    "KeyPackagePublish from unauthenticated session {}",
-                                    session_id
-                                ),
-                                timestamp: now,
-                            },
-                        ],
-                        Err(e) => vec![ServerAction::Log {
-                            level: LogLevel::Error,
-                            message: format!("failed to encode error response: {}", e),
-                            timestamp: now,
-                        }],
-                    };
-                },
-            },
-            None => {
-                let error = Payload::Error(ErrorPayload::frame_rejected("Unknown session"));
+        let user_id = if let Some(info) = self.registry.sessions(session_id) {
+            if let Some(id) = info.user_id {
+                id
+            } else {
+                let error =
+                    Payload::Error(ErrorPayload::frame_rejected("Session not authenticated"));
                 return match error.into_frame(FrameHeader::new(Opcode::Error)) {
                     Ok(frame) => {
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "KeyPackagePublish from unknown session {}",
-                                session_id
+                                "KeyPackagePublish from unauthenticated session {session_id}"
                             ),
                             timestamp: now,
                         }]
                     },
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
-                        message: format!("failed to encode error response: {}", e),
+                        message: format!("failed to encode error response: {e}"),
                         timestamp: now,
                     }],
                 };
-            },
+            }
+        } else {
+            let error = Payload::Error(ErrorPayload::frame_rejected("Unknown session"));
+            return match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                Ok(frame) => {
+                    vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                        level: LogLevel::Warn,
+                        message: format!("KeyPackagePublish from unknown session {session_id}"),
+                        timestamp: now,
+                    }]
+                },
+                Err(e) => vec![ServerAction::Log {
+                    level: LogLevel::Error,
+                    message: format!("failed to encode error response: {e}"),
+                    timestamp: now,
+                }],
+            };
         };
 
-        let payload = match Payload::from_frame(frame.clone()) {
+        let payload = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::KeyPackagePublish(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -525,35 +512,33 @@ where
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "expected KeyPackagePublish payload from session {}",
-                                session_id
+                                "expected KeyPackagePublish payload from session {session_id}"
                             ),
                             timestamp: now,
                         }]
                     },
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
-                        message: format!("failed to encode error response: {}", e),
+                        message: format!("failed to encode error response: {e}"),
                         timestamp: now,
                     }],
                 };
             },
             Err(e) => {
-                let error = Payload::Error(ErrorPayload::invalid_payload(&format!(
-                    "Failed to decode KeyPackagePublish: {}",
-                    e
+                let error = Payload::Error(ErrorPayload::invalid_payload(format!(
+                    "Failed to decode KeyPackagePublish: {e}"
                 )));
                 return match error.into_frame(FrameHeader::new(Opcode::Error)) {
                     Ok(frame) => {
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
-                            message: format!("failed to decode KeyPackagePublish: {}", e),
+                            message: format!("failed to decode KeyPackagePublish: {e}"),
                             timestamp: now,
                         }]
                     },
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
-                        message: format!("failed to encode error response: {}", e),
+                        message: format!("failed to encode error response: {e}"),
                         timestamp: now,
                     }],
                 };
@@ -566,14 +551,14 @@ where
 
         let mut actions = vec![ServerAction::Log {
             level: LogLevel::Info,
-            message: format!("KeyPackage published for user {}", user_id),
+            message: format!("KeyPackage published for user {user_id}"),
             timestamp: now,
         }];
 
         if store_result == StoreResult::Evicted {
             actions.push(ServerAction::Log {
                 level: LogLevel::Debug,
-                message: format!("KeyPackage registry evicted an entry for user {}", user_id),
+                message: format!("KeyPackage registry evicted an entry for user {user_id}"),
                 timestamp: now,
             });
         }
@@ -581,7 +566,7 @@ where
         actions
     }
 
-    /// Handle KeyPackage fetch request.
+    /// Handle `KeyPackage` fetch request.
     fn handle_key_package_fetch(
         &mut self,
         session_id: u64,
@@ -590,7 +575,7 @@ where
         let now = self.env.now();
 
         // Decode request
-        let request = match Payload::from_frame(frame.clone()) {
+        let request = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::KeyPackageFetch(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -601,8 +586,7 @@ where
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "unexpected payload type in KeyPackageFetch frame from session {}",
-                                session_id
+                                "unexpected payload type in KeyPackageFetch frame from session {session_id}"
                             ),
                             timestamp: now,
                         }]
@@ -610,25 +594,22 @@ where
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
                         message: format!(
-                            "failed to encode error response for KeyPackageFetch: {}",
-                            e
+                            "failed to encode error response for KeyPackageFetch: {e}"
                         ),
                         timestamp: now,
                     }],
                 };
             },
             Err(e) => {
-                let error = Payload::Error(ErrorPayload::invalid_payload(&format!(
-                    "Failed to decode KeyPackageFetch: {}",
-                    e
+                let error = Payload::Error(ErrorPayload::invalid_payload(format!(
+                    "Failed to decode KeyPackageFetch: {e}"
                 )));
                 return match error.into_frame(FrameHeader::new(Opcode::Error)) {
                     Ok(frame) => {
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "failed to decode KeyPackageFetch from session {}: {}",
-                                session_id, e
+                                "failed to decode KeyPackageFetch from session {session_id}: {e}"
                             ),
                             timestamp: now,
                         }]
@@ -636,8 +617,7 @@ where
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
                         message: format!(
-                            "failed to encode error response for KeyPackageFetch: {}",
-                            e
+                            "failed to encode error response for KeyPackageFetch: {e}"
                         ),
                         timestamp: now,
                     }],
@@ -646,63 +626,57 @@ where
         };
 
         // Fetch (and consume) from registry
-        match self.key_package_registry.take(request.user_id) {
-            Some(entry) => {
-                // Build response
-                let response = Payload::KeyPackageFetch(KeyPackageFetchPayload {
-                    user_id: request.user_id,
-                    key_package_bytes: entry.key_package_bytes,
-                    hash_ref: entry.hash_ref,
-                });
+        if let Some(entry) = self.key_package_registry.take(request.user_id) {
+            // Build response
+            let response = Payload::KeyPackageFetch(KeyPackageFetchPayload {
+                user_id: request.user_id,
+                key_package_bytes: entry.key_package_bytes,
+                hash_ref: entry.hash_ref,
+            });
 
-                match response.into_frame(FrameHeader::new(Opcode::KeyPackageFetch)) {
-                    Ok(response_frame) => vec![
-                        ServerAction::SendToSession { session_id, frame: response_frame },
-                        ServerAction::Log {
-                            level: LogLevel::Debug,
-                            message: format!("KeyPackage fetched for user {}", request.user_id),
-                            timestamp: now,
-                        },
-                    ],
-                    Err(e) => vec![ServerAction::Log {
-                        level: LogLevel::Error,
-                        message: format!("failed to encode KeyPackageFetch response: {}", e),
+            match response.into_frame(FrameHeader::new(Opcode::KeyPackageFetch)) {
+                Ok(response_frame) => vec![
+                    ServerAction::SendToSession { session_id, frame: response_frame },
+                    ServerAction::Log {
+                        level: LogLevel::Debug,
+                        message: format!("KeyPackage fetched for user {}", request.user_id),
                         timestamp: now,
-                    }],
-                }
-            },
-            None => {
-                // No KeyPackage found - return error
-                let error = Payload::Error(ErrorPayload::keypackage_not_found(request.user_id));
-
-                match error.into_frame(FrameHeader::new(Opcode::Error)) {
-                    Ok(frame) => {
-                        vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
-                            level: LogLevel::Debug,
-                            message: format!(
-                                "no KeyPackage found for user {} (requested by session {})",
-                                request.user_id, session_id
-                            ),
-                            timestamp: now,
-                        }]
                     },
-                    Err(e) => vec![ServerAction::Log {
-                        level: LogLevel::Error,
+                ],
+                Err(e) => vec![ServerAction::Log {
+                    level: LogLevel::Error,
+                    message: format!("failed to encode KeyPackageFetch response: {e}"),
+                    timestamp: now,
+                }],
+            }
+        } else {
+            // No KeyPackage found - return error
+            let error = Payload::Error(ErrorPayload::keypackage_not_found(request.user_id));
+
+            match error.into_frame(FrameHeader::new(Opcode::Error)) {
+                Ok(frame) => {
+                    vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
+                        level: LogLevel::Debug,
                         message: format!(
-                            "failed to encode error response for KeyPackageFetch: {}",
-                            e
+                            "no KeyPackage found for user {} (requested by session {})",
+                            request.user_id, session_id
                         ),
                         timestamp: now,
-                    }],
-                }
-            },
+                    }]
+                },
+                Err(e) => vec![ServerAction::Log {
+                    level: LogLevel::Error,
+                    message: format!("failed to encode error response for KeyPackageFetch: {e}"),
+                    timestamp: now,
+                }],
+            }
         }
     }
 
-    /// Handle GroupInfo publication (store GroupInfo for external joiners).
+    /// Handle `GroupInfo` publication (store `GroupInfo` for external joiners).
     ///
-    /// When a client publishes GroupInfo at epoch 0, this indicates room
-    /// creation. The server creates the room in RoomManager and subscribes
+    /// When a client publishes `GroupInfo` at epoch 0, this indicates room
+    /// creation. The server creates the room in `RoomManager` and subscribes
     /// the creator.
     fn handle_group_info_publish(
         &mut self,
@@ -712,14 +686,13 @@ where
         let now = self.env.now();
         let mut actions = Vec::new();
 
-        let payload = match Payload::from_frame(frame.clone()) {
+        let payload = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::GroupInfo(info)) => info,
             Ok(_) => {
                 return vec![ServerAction::Log {
                     level: LogLevel::Warn,
                     message: format!(
-                        "unexpected payload type in GroupInfo frame from session {}",
-                        session_id
+                        "unexpected payload type in GroupInfo frame from session {session_id}"
                     ),
                     timestamp: now,
                 }];
@@ -727,10 +700,7 @@ where
             Err(e) => {
                 return vec![ServerAction::Log {
                     level: LogLevel::Warn,
-                    message: format!(
-                        "failed to decode GroupInfo from session {}: {}",
-                        session_id, e
-                    ),
+                    message: format!("failed to decode GroupInfo from session {session_id}: {e}"),
                     timestamp: now,
                 }];
             },
@@ -761,7 +731,7 @@ where
         actions
     }
 
-    /// Handle GroupInfo request (fetch GroupInfo for external joiners).
+    /// Handle `GroupInfo` request (fetch `GroupInfo` for external joiners).
     fn handle_group_info_request(
         &mut self,
         session_id: u64,
@@ -771,7 +741,7 @@ where
 
         let now = self.env.now();
 
-        let request = match Payload::from_frame(frame.clone()) {
+        let request = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::GroupInfoRequest(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -782,8 +752,7 @@ where
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "unexpected payload type in GroupInfoRequest frame from session {}",
-                                session_id
+                                "unexpected payload type in GroupInfoRequest frame from session {session_id}"
                             ),
                             timestamp: now,
                         }]
@@ -791,25 +760,22 @@ where
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
                         message: format!(
-                            "failed to encode error response for GroupInfoRequest: {}",
-                            e
+                            "failed to encode error response for GroupInfoRequest: {e}"
                         ),
                         timestamp: now,
                     }],
                 };
             },
             Err(e) => {
-                let error = Payload::Error(ErrorPayload::invalid_payload(&format!(
-                    "Failed to decode GroupInfoRequest: {}",
-                    e
+                let error = Payload::Error(ErrorPayload::invalid_payload(format!(
+                    "Failed to decode GroupInfoRequest: {e}"
                 )));
                 return match error.into_frame(FrameHeader::new(Opcode::Error)) {
                     Ok(frame) => {
                         vec![ServerAction::SendToSession { session_id, frame }, ServerAction::Log {
                             level: LogLevel::Warn,
                             message: format!(
-                                "failed to decode GroupInfoRequest from session {}: {}",
-                                session_id, e
+                                "failed to decode GroupInfoRequest from session {session_id}: {e}"
                             ),
                             timestamp: now,
                         }]
@@ -817,8 +783,7 @@ where
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
                         message: format!(
-                            "failed to encode error response for GroupInfoRequest: {}",
-                            e
+                            "failed to encode error response for GroupInfoRequest: {e}"
                         ),
                         timestamp: now,
                     }],
@@ -848,7 +813,7 @@ where
                     ],
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
-                        message: format!("failed to encode GroupInfo response: {}", e),
+                        message: format!("failed to encode GroupInfo response: {e}"),
                         timestamp: now,
                     }],
                 }
@@ -869,8 +834,7 @@ where
                     Err(e) => vec![ServerAction::Log {
                         level: LogLevel::Error,
                         message: format!(
-                            "failed to encode error response for GroupInfoRequest: {}",
-                            e
+                            "failed to encode error response for GroupInfoRequest: {e}"
                         ),
                         timestamp: now,
                     }],
@@ -943,7 +907,7 @@ where
         Ok(actions)
     }
 
-    /// Convert a RoomAction to ServerActions.
+    /// Convert a `RoomAction` to `ServerActions`.
     fn convert_room_action(
         &self,
         room_action: RoomAction<E::Instant>,
@@ -956,16 +920,14 @@ where
                     let recipient_id = frame.header.recipient_id();
                     if let Some(session_id) = self.registry.session_id_for_user(recipient_id) {
                         return vec![ServerAction::SendToSession { session_id, frame }];
-                    } else {
-                        return vec![ServerAction::Log {
-                            level: LogLevel::Warn,
-                            message: format!(
-                                "Welcome recipient {} not connected (room {})",
-                                recipient_id, room_id
-                            ),
-                            timestamp: self.env.now(),
-                        }];
                     }
+                    return vec![ServerAction::Log {
+                        level: LogLevel::Warn,
+                        message: format!(
+                            "Welcome recipient {recipient_id} not connected (room {room_id})"
+                        ),
+                        timestamp: self.env.now(),
+                    }];
                 }
 
                 let is_sender = if exclude_sender { Some(sender_session_id) } else { None };
@@ -983,13 +945,13 @@ where
                         ServerAction::SendToSession { session_id: sender_id, frame },
                         ServerAction::Log {
                             level: LogLevel::Warn,
-                            message: format!("rejected frame from {}: {}", sender_id, reason),
+                            message: format!("rejected frame from {sender_id}: {reason}"),
                             timestamp: processed_at,
                         },
                     ],
                     Err(_) => vec![ServerAction::Log {
                         level: LogLevel::Warn,
-                        message: format!("rejected frame from {}: {}", sender_id, reason),
+                        message: format!("rejected frame from {sender_id}: {reason}"),
                         timestamp: processed_at,
                     }],
                 }
@@ -1008,7 +970,7 @@ where
                     Err(e) => {
                         vec![ServerAction::Log {
                             level: LogLevel::Error,
-                            message: format!("failed to encode SyncResponse: {}", e),
+                            message: format!("failed to encode SyncResponse: {e}"),
                             timestamp: self.env.now(),
                         }]
                     },
@@ -1039,7 +1001,7 @@ where
 
         Ok(vec![ServerAction::Log {
             level: LogLevel::Info,
-            message: format!("room {:032x} created by session {}", room_id, creator_session_id),
+            message: format!("room {room_id:032x} created by session {creator_session_id}"),
             timestamp: now,
         }])
     }
@@ -1384,7 +1346,7 @@ mod tests {
 
         // Create driver and recover
         let env = MockEnv::with_crypto_rng();
-        let mut driver = ServerDriver::new(env, storage.clone(), ServerConfig::default());
+        let mut driver = ServerDriver::new(env, storage, ServerConfig::default());
         driver.recover_from_storage().unwrap();
 
         // Accept a connection and process a new frame

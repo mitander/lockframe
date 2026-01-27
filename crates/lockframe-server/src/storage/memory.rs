@@ -10,33 +10,33 @@ use super::{Storage, StorageError, StoredRoomMetadata};
 
 /// In-memory storage implementation for testing and simulation
 ///
-/// Uses HashMap for fast lookups and Vec for ordered frame storage. All state
+/// Uses `HashMap` for fast lookups and Vec for ordered frame storage. All state
 /// is wrapped in Arc<Mutex<>> to allow Clone and concurrent access. Thread-safe
-/// through Mutex, but uses lock().expect() which will panic if the mutex is
+/// through Mutex, but uses `lock().expect()` which will panic if the mutex is
 /// poisoned - acceptable for test code. All operations are O(1) except
-/// load_frames which is O(limit).
+/// `load_frames` which is O(limit).
 #[derive(Clone)]
 pub struct MemoryStorage {
     inner: Arc<Mutex<MemoryStorageInner>>,
 }
 
 struct MemoryStorageInner {
-    /// Room metadata (creator, created_at)
+    /// Room metadata (creator, `created_at`)
     rooms: HashMap<u128, StoredRoomMetadata>,
 
-    /// Frames organized by room, stored in log_index order
+    /// Frames organized by room, stored in `log_index` order
     frames: HashMap<u128, Vec<Frame>>,
 
     /// MLS group state per room
     mls_states: HashMap<u128, MlsGroupState>,
 
-    /// GroupInfo for external joiners, maps room_id -> (epoch,
-    /// group_info_bytes)
+    /// `GroupInfo` for external joiners, maps `room_id` -> (epoch,
+    /// `group_info_bytes`)
     group_infos: HashMap<u128, (u64, Vec<u8>)>,
 }
 
 impl MemoryStorage {
-    /// Create a new empty MemoryStorage
+    /// Create a new empty `MemoryStorage`
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(MemoryStorageInner {
@@ -74,7 +74,7 @@ impl MemoryStorage {
             .expect("MemoryStorage mutex poisoned")
             .frames
             .values()
-            .map(|frames| frames.len())
+            .map(std::vec::Vec::len)
             .sum()
     }
 }
@@ -98,7 +98,7 @@ impl Storage for MemoryStorage {
     ) -> Result<(), StorageError> {
         let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
 
-        let frames = inner.frames.entry(room_id).or_insert_with(Vec::new);
+        let frames = inner.frames.entry(room_id).or_default();
 
         let expected_index = frames.len() as u64;
         debug_assert!(frames.len() < u64::MAX as usize);
@@ -114,6 +114,7 @@ impl Storage for MemoryStorage {
         frames.push(frame.clone());
 
         debug_assert_eq!(frames.len() as u64 - 1, log_index);
+         // Safe: we just pushed at this index
         debug_assert_eq!(frames[log_index as usize].header.log_index(), log_index);
 
         Ok(())
@@ -466,7 +467,7 @@ mod tests {
 
         // Should list all three rooms (even without frames)
         let mut rooms = storage.list_rooms().unwrap();
-        rooms.sort();
+        rooms.sort_unstable();
         assert_eq!(rooms, vec![100, 200, 300]);
     }
 

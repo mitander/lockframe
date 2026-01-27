@@ -114,7 +114,7 @@ impl InvariantRegistry {
     /// Create a registry with standard App/Bridge invariants.
     ///
     /// Includes:
-    /// - [`ActiveRoomInRooms`]: active_room is in rooms map
+    /// - [`ActiveRoomInRooms`]: `active_room` is in rooms map
     /// - [`EpochMonotonicity`]: epochs never decrease
     /// - [`MembershipConsistency`]: members agree on membership
     /// - [`TreeHashConvergence`]: tree hashes match at same epoch
@@ -151,7 +151,7 @@ impl InvariantRegistry {
     /// Use this in tests where you want immediate failure with context.
     pub fn assert_all(&self, state: &SystemSnapshot, context: &str) {
         if let Err(violations) = self.check_all(state) {
-            let messages: Vec<_> = violations.iter().map(|v| v.to_string()).collect();
+            let messages: Vec<_> = violations.iter().map(std::string::ToString::to_string).collect();
             panic!("Invariant violation {context}:\n  {}", messages.join("\n  "));
         }
     }

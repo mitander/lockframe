@@ -276,7 +276,7 @@ async fn write_frame(send: &mut SendStream, frame: &Frame) -> Result<(), Transpo
 /// Create a secure client config that verifies certificates against system
 /// roots.
 fn secure_client_config() -> Result<ClientConfig, TransportError> {
-    let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let roots = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect::<rustls::RootCertStore>();
 
     let mut crypto =
         rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();

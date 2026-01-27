@@ -17,6 +17,7 @@ use lockframe_proto::{
 };
 
 /// Helper to encode frame to hex string for snapshot
+#[allow(clippy::expect_used)] // Test helper - failures indicate test setup issues
 fn frame_to_hex(frame: &Frame) -> String {
     let mut buf = Vec::new();
     frame.encode(&mut buf).expect("encoding should succeed");
@@ -148,7 +149,7 @@ fn snapshot_receipt_frame() {
     let receipt = Payload::AppReceipt(Receipt {
         message_log_index: 42,
         kind: ReceiptType::Read,
-        timestamp: 1234567890,
+        timestamp: 1_234_567_890,
     });
 
     let frame = receipt

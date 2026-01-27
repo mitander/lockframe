@@ -213,6 +213,7 @@ fn prop_frame_encoded_size_correct() {
         frame.encode(&mut buf).expect("encode should succeed");
 
         // PROPERTY: Encoded size must equal header size + payload size
+        #[allow(clippy::arithmetic_side_effects)] // Test code: values bounded by property test
         let expected_size = FrameHeader::SIZE + frame.payload.len();
         prop_assert_eq!(
             buf.len(),

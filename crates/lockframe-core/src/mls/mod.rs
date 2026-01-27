@@ -8,7 +8,7 @@
 //!
 //! - [`group`]: Client-side MLS group state machine
 //! - [`state`]: MLS group state for storage and validation
-//! - [`provider`]: OpenMLS provider integration
+//! - [`provider`]: `OpenMLS` provider integration
 //! - [`validator`]: Frame validation for server sequencing
 //! - [`error`]: MLS-specific error types
 //! - [`constants`]: Protocol constants and limits

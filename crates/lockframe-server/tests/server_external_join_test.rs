@@ -20,13 +20,13 @@ fn extract_frames_by_opcode(actions: &[ClientAction], opcode: Opcode) -> Vec<Fra
 }
 
 /// WHY THIS TEST IS NEEDED:
-/// Verifies server correctly stores and retrieves GroupInfo for external
+/// Verifies server correctly stores and retrieves `GroupInfo` for external
 /// joiners. This is server-specific behavior that client tests cannot verify:
 /// - Storage trait implementation works correctly
-/// - GroupInfo bytes survive storage round-trip
+/// - `GroupInfo` bytes survive storage round-trip
 /// - Epoch is correctly stored
 ///
-/// Without this test, GroupInfo could be corrupted in storage and external
+/// Without this test, `GroupInfo` could be corrupted in storage and external
 /// joins would fail with no indication of where the bug is.
 #[test]
 fn server_stores_and_retrieves_group_info() {
@@ -53,7 +53,7 @@ fn server_stores_and_retrieves_group_info() {
 
         // Server processes the GroupInfo frame
         let result = server.process_frame(1, group_info_frames[0].clone()).await;
-        assert!(result.is_ok(), "Server should accept GroupInfo: {:?}", result);
+        assert!(result.is_ok(), "Server should accept GroupInfo: {result:?}");
 
         // Verify GroupInfo is stored correctly
         let stored =

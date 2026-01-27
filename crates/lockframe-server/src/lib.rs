@@ -13,7 +13,7 @@
 //! # Components
 //!
 //! - [`ServerDriver`]: Action-based orchestrator (pure logic, no I/O)
-//! - [`Server`]: Production runtime that executes ServerDriver actions
+//! - [`Server`]: Production runtime that executes `ServerDriver` actions
 //! - [`QuinnTransport`]: QUIC transport via Quinn library
 //! - [`SystemEnv`]: Production environment (real time, crypto RNG)
 
@@ -167,7 +167,7 @@ async fn handle_connection(
     let outbound_stream = conn
         .open_uni()
         .await
-        .map_err(|e| ServerError::Internal(format!("Failed to open outbound stream: {}", e)))?;
+        .map_err(|e| ServerError::Internal(format!("Failed to open outbound stream: {e}")))?;
 
     {
         let mut connections = shared.connections.write().await;
@@ -182,7 +182,7 @@ async fn handle_connection(
     {
         let mut driver = driver.lock().await;
         let actions = driver.process_event(ServerEvent::ConnectionAccepted { session_id })?;
-        execute_actions(&mut *driver, actions, &shared).await?;
+        execute_actions(&mut driver, actions, &shared).await?;
     }
 
     loop {
@@ -220,7 +220,7 @@ async fn handle_connection(
             session_id,
             reason: "connection closed".to_string(),
         })?;
-        execute_actions(&mut *driver, actions, &shared).await?;
+        execute_actions(&mut driver, actions, &shared).await?;
     }
 
     Ok(())
@@ -250,12 +250,9 @@ async fn handle_stream(
             },
         }
 
-        let header: &FrameHeader = match FrameHeader::ref_from_bytes(&buf[..128]) {
-            Ok(h) => h,
-            Err(_) => {
-                tracing::warn!("Invalid frame header");
-                break;
-            },
+        let header: &FrameHeader = if let Ok(h) = FrameHeader::ref_from_bytes(&buf[..128]) { h } else {
+            tracing::warn!("Invalid frame header");
+            break;
         };
 
         let payload_size = header.payload_size() as usize;
@@ -289,7 +286,7 @@ async fn handle_stream(
 
         {
             let mut driver = driver.lock().await;
-            execute_actions(&mut *driver, actions, shared).await?;
+            execute_actions(&mut driver, actions, shared).await?;
         }
     }
 

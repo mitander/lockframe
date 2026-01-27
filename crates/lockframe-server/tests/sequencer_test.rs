@@ -2,7 +2,7 @@
 //!
 //! Tests verify that a new sequencer can resume from where the previous one
 //! left off. Basic sequencing invariants (no gaps, monotonic indices) are
-//! tested in chaos_sequencer.rs.
+//! tested in `chaos_sequencer.rs`.
 
 use bytes::Bytes;
 use lockframe_proto::{Frame, FrameHeader, Opcode};

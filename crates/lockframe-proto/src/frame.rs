@@ -76,9 +76,19 @@ impl Frame {
     #[must_use]
     pub fn new(mut header: FrameHeader, payload: impl Into<Bytes>) -> Self {
         let payload = payload.into();
-        header.payload_size = (payload.len() as u32).to_be_bytes();
 
-        debug_assert_eq!(header.payload_size(), payload.len() as u32);
+        // INVARIANT: Payload length always fits in u32 because:
+        // 1. Bytes is bounded by isize::MAX (Rust allocation limit)
+        // 2. MAX_PAYLOAD_SIZE (16MB) << u32::MAX (4GB)
+        // 3. Even on 64-bit, practical allocations never approach u32::MAX
+        #[allow(clippy::expect_used)]
+        let payload_len = u32::try_from(payload.len()).expect(
+            "invariant: payload length fits in u32 (bounded by isize::MAX and protocol limit)",
+        );
+
+        header.payload_size = payload_len.to_be_bytes();
+
+        debug_assert_eq!(header.payload_size(), payload_len);
 
         Self { header, payload }
     }
@@ -144,7 +154,7 @@ impl Frame {
         let header = FrameHeader::from_bytes(bytes)?;
 
         let payload_size = header.payload_size() as usize;
-        let total_size = FrameHeader::SIZE.checked_add(payload_size).ok_or_else(|| {
+        let total_size = FrameHeader::SIZE.checked_add(payload_size).ok_or({
             ProtocolError::PayloadTooLarge {
                 size: payload_size,
                 max: FrameHeader::MAX_PAYLOAD_SIZE as usize,
@@ -172,7 +182,15 @@ impl Frame {
             let _ = total_size; // Proves we hit success path
         }
 
-        let payload = Bytes::copy_from_slice(&bytes[FrameHeader::SIZE..total_size]);
+        // INVARIANT: We've validated bytes.len() >= total_size in the truncation check
+        // above. This slice operation cannot panic because:
+        // - total_size = FrameHeader::SIZE + payload_size (checked arithmetic)
+        // - We verified bytes.len() >= total_size in the preceding check
+        // - Therefore: FrameHeader::SIZE < total_size <= bytes.len()
+        #[allow(clippy::expect_used)]
+        let payload = Bytes::copy_from_slice(
+            bytes.get(FrameHeader::SIZE..total_size).expect("invariant: bounds checked above"),
+        );
 
         debug_assert_eq!(payload.len(), payload_size);
 
@@ -191,9 +209,9 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             (any::<FrameHeader>(), any::<Vec<u8>>())
-                .prop_map(|(header, payload_bytes)| Frame::new(header, payload_bytes))
+                .prop_map(|(header, payload_bytes)| Self::new(header, payload_bytes))
                 .boxed()
         }
     }
@@ -223,7 +241,9 @@ mod tests {
         let frame = Frame::new(header, payload_bytes.clone());
 
         // Verify payload_size was set correctly
-        assert_eq!(frame.header.payload_size(), payload_bytes.len() as u32);
+        #[allow(clippy::cast_possible_truncation)] // Test with small payload
+        let expected_size = payload_bytes.len() as u32;
+        assert_eq!(frame.header.payload_size(), expected_size);
 
         // Encode and decode
         let mut wire = Vec::new();

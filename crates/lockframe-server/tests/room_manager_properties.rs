@@ -1,7 +1,7 @@
-//! Property-based tests for RoomManager
+//! Property-based tests for `RoomManager`
 //!
 //! These tests verify invariants that must hold for all inputs, using
-//! deterministic simulation (SimEnv) for reproducibility.
+//! deterministic simulation (`SimEnv`) for reproducibility.
 
 use std::collections::HashSet;
 
@@ -145,7 +145,7 @@ proptest! {
             let expected_has_more = remaining > page_size;
             prop_assert_eq!(has_more, expected_has_more);
 
-            for frame_bytes in frames.iter() {
+            for frame_bytes in &frames {
                 prop_assert!(!frame_bytes.is_empty());
             }
         } else {

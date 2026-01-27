@@ -393,7 +393,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             (
                 arbitrary_bytes::<2>(),               // opcode
                 any::<u8>(),                          // flags
@@ -403,7 +403,7 @@ mod tests {
                 arbitrary_bytes::<8>(),               // context_id
                 arbitrary_bytes::<8>(),               // hlc_timestamp
                 arbitrary_bytes::<8>(),               // epoch
-                0u32..=FrameHeader::MAX_PAYLOAD_SIZE, // payload_size
+                0u32..=Self::MAX_PAYLOAD_SIZE, // payload_size
                 arbitrary_bytes::<64>(),              // signature
             )
                 .prop_map(
@@ -419,9 +419,9 @@ mod tests {
                         payload_size,
                         signature,
                     )| {
-                        FrameHeader {
-                            magic: FrameHeader::MAGIC.to_be_bytes(),
-                            version: FrameHeader::VERSION,
+                        Self {
+                            magic: Self::MAGIC.to_be_bytes(),
+                            version: Self::VERSION,
                             flags,
                             opcode,
                             request_id,

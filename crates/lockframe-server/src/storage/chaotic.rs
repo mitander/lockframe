@@ -52,7 +52,7 @@ impl ChaoticRng {
         (self.state as f64) / (M as f64)
     }
 
-    /// Check if we should fail (returns true with probability = failure_rate)
+    /// Check if we should fail (returns true with probability = `failure_rate`)
     fn should_fail(&mut self, failure_rate: f64) -> bool {
         self.next() < failure_rate
     }
@@ -63,12 +63,11 @@ impl<S: Storage> ChaoticStorage<S> {
     ///
     /// # Panics
     ///
-    /// Panics if failure_rate is not in [0.0, 1.0]
+    /// Panics if `failure_rate` is not in [0.0, 1.0]
     pub fn new(inner: S, failure_rate: f64) -> Self {
         assert!(
             (0.0..=1.0).contains(&failure_rate),
-            "failure_rate must be between 0.0 and 1.0, got {}",
-            failure_rate
+            "failure_rate must be between 0.0 and 1.0, got {failure_rate}"
         );
 
         Self::with_seed(inner, failure_rate, 0x1234_5678_9ABC_DEF0)
@@ -78,8 +77,7 @@ impl<S: Storage> ChaoticStorage<S> {
     pub fn with_seed(inner: S, failure_rate: f64, seed: u64) -> Self {
         assert!(
             (0.0..=1.0).contains(&failure_rate),
-            "failure_rate must be between 0.0 and 1.0, got {}",
-            failure_rate
+            "failure_rate must be between 0.0 and 1.0, got {failure_rate}"
         );
 
         Self {
@@ -276,7 +274,7 @@ mod tests {
             let result1 = chaotic1.store_frame(100, i, &frame);
             let result2 = chaotic2.store_frame(100, i, &frame);
 
-            assert_eq!(result1.is_ok(), result2.is_ok(), "determinism violated at iteration {}", i);
+            assert_eq!(result1.is_ok(), result2.is_ok(), "determinism violated at iteration {i}");
         }
     }
 

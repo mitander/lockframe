@@ -1,6 +1,6 @@
 //! Cluster convergence tests using Deterministic Simulation Testing.
 //!
-//! Uses the TestCluster fake to verify that Client convergence logic works
+//! Uses the `TestCluster` fake to verify that Client convergence logic works
 //! correctly under various join scenarios (Welcome, External, mixed).
 
 use std::collections::BTreeSet;
@@ -14,7 +14,7 @@ use proptest::prelude::*;
 
 const ROOM_ID: RoomId = 0x0001_0001_0001_0001_0001_0001_0001_0001;
 
-/// Helper to create SystemSnapshot for invariant checking.
+/// Helper to create `SystemSnapshot` for invariant checking.
 fn to_snapshot(cluster: &TestCluster) -> SystemSnapshot {
     let mut clients = Vec::new();
 
@@ -54,8 +54,7 @@ fn verify_convergence(cluster: &TestCluster) -> Result<(), String> {
     for (idx, epoch) in &epochs {
         if *epoch != first {
             return Err(format!(
-                "epoch mismatch: client 0 at {}, client {} at {}",
-                first, idx, epoch
+                "epoch mismatch: client 0 at {first}, client {idx} at {epoch}"
             ));
         }
     }
@@ -64,7 +63,7 @@ fn verify_convergence(cluster: &TestCluster) -> Result<(), String> {
     let invariants = InvariantRegistry::standard();
 
     invariants.check_all(&snapshot).map_err(|violations| {
-        let messages: Vec<_> = violations.iter().map(|v| v.to_string()).collect();
+        let messages: Vec<_> = violations.iter().map(std::string::ToString::to_string).collect();
         format!("Invariant violations:\n  {}", messages.join("\n  "))
     })?;
 
@@ -87,7 +86,7 @@ proptest! {
 
         for i in 1..=num_joiners {
             cluster.join_via_welcome(ROOM_ID, i)
-                .unwrap_or_else(|e| panic!("join {} failed: {}", i, e));
+                .unwrap_or_else(|e| panic!("join {i} failed: {e}"));
         }
 
         // ORACLE: All converged
@@ -110,7 +109,7 @@ proptest! {
 
         for i in 1..=num_joiners {
             cluster.join_via_external(ROOM_ID, i)
-                .unwrap_or_else(|e| panic!("join {} failed: {}", i, e));
+                .unwrap_or_else(|e| panic!("join {i} failed: {e}"));
         }
 
         // ORACLE: All converged
@@ -118,7 +117,7 @@ proptest! {
 
         // ORACLE: Messaging works from each client
         for sender in 0..=num_joiners {
-            let msg = format!("from {}", sender);
+            let msg = format!("from {sender}");
             cluster.send_and_verify(ROOM_ID, sender, msg.as_bytes()).expect("messaging");
         }
     }
@@ -140,15 +139,15 @@ proptest! {
             let joiner_idx = i + 1;
             if *use_welcome {
                 cluster.join_via_welcome(ROOM_ID, joiner_idx)
-                    .unwrap_or_else(|e| panic!("Welcome join {} failed: {}", joiner_idx, e));
+                    .unwrap_or_else(|e| panic!("Welcome join {joiner_idx} failed: {e}"));
             } else {
                 cluster.join_via_external(ROOM_ID, joiner_idx)
-                    .unwrap_or_else(|e| panic!("External join {} failed: {}", joiner_idx, e));
+                    .unwrap_or_else(|e| panic!("External join {joiner_idx} failed: {e}"));
             }
 
             // ORACLE: Convergence must hold after EVERY join operation
             verify_convergence(&cluster)
-                .unwrap_or_else(|e| panic!("Convergence failed after join {}: {}", joiner_idx, e));
+                .unwrap_or_else(|e| panic!("Convergence failed after join {joiner_idx}: {e}"));
         }
 
         // ORACLE: Final state is fully converged
@@ -156,9 +155,9 @@ proptest! {
 
         // ORACLE: Messaging works from all clients
         for sender in 0..num_clients {
-            let msg = format!("msg from {}", sender);
+            let msg = format!("msg from {sender}");
             cluster.send_and_verify(ROOM_ID, sender, msg.as_bytes())
-                .unwrap_or_else(|e| panic!("Messaging from {} failed: {}", sender, e));
+                .unwrap_or_else(|e| panic!("Messaging from {sender} failed: {e}"));
         }
     }
 }

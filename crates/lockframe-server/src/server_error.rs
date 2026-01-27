@@ -27,14 +27,14 @@ pub enum ServerError {
 
     /// Room operation failed.
     ///
-    /// Wraps errors from RoomManager (MLS validation, sequencing, etc.).
-    /// See RoomError for details on cause and retryability.
+    /// Wraps errors from `RoomManager` (MLS validation, sequencing, etc.).
+    /// See `RoomError` for details on cause and retryability.
     Room(RoomError),
 
     /// Storage operation failed.
     ///
     /// Wraps errors from storage backend (frame persistence, state loading).
-    /// See StorageError for details. May be transient (I/O errors) or fatal
+    /// See `StorageError` for details. May be transient (I/O errors) or fatal
     /// (serialization errors).
     Storage(StorageError),
 
@@ -59,14 +59,14 @@ pub enum ServerError {
 impl fmt::Display for ServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SessionNotFound(id) => write!(f, "session not found: {}", id),
-            Self::SessionAlreadyExists(id) => write!(f, "session already exists: {}", id),
-            Self::Room(err) => write!(f, "room error: {}", err),
-            Self::Storage(err) => write!(f, "storage error: {}", err),
+            Self::SessionNotFound(id) => write!(f, "session not found: {id}"),
+            Self::SessionAlreadyExists(id) => write!(f, "session already exists: {id}"),
+            Self::Room(err) => write!(f, "room error: {err}"),
+            Self::Storage(err) => write!(f, "storage error: {err}"),
             Self::ConnectionFailed { session_id, reason } => {
-                write!(f, "connection failed for session {}: {}", session_id, reason)
+                write!(f, "connection failed for session {session_id}: {reason}")
             },
-            Self::Protocol(msg) => write!(f, "protocol error: {}", msg),
+            Self::Protocol(msg) => write!(f, "protocol error: {msg}"),
         }
     }
 }
@@ -130,10 +130,10 @@ impl fmt::Display for ExecutorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SendFailed { session_id, reason } => {
-                write!(f, "send failed for session {}: {}", session_id, reason)
+                write!(f, "send failed for session {session_id}: {reason}")
             },
-            Self::StorageFailed(msg) => write!(f, "storage failed: {}", msg),
-            Self::Transport(msg) => write!(f, "transport error: {}", msg),
+            Self::StorageFailed(msg) => write!(f, "storage failed: {msg}"),
+            Self::Transport(msg) => write!(f, "transport error: {msg}"),
         }
     }
 }

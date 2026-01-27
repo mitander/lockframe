@@ -5,7 +5,7 @@
 //! Clients own the MLS group state; the server just sequences and broadcasts.
 //!
 //! Rooms must be explicitly created (no lazy creation) to prevent accidental
-//! rooms and enable future auth. RoomMetadata is an extension point for
+//! rooms and enable future auth. `RoomMetadata` is an extension point for
 //! permissions/roles.
 
 use std::collections::HashMap;
@@ -36,7 +36,7 @@ pub struct RoomManager {
     room_metadata: HashMap<u128, RoomMetadata>,
 }
 
-/// Actions returned by RoomManager for driver to execute.
+/// Actions returned by `RoomManager` for driver to execute.
 ///
 /// Generic over `I` (Instant type) to support virtual time in tests.
 #[derive(Debug, Clone)]
@@ -90,7 +90,7 @@ pub enum RoomAction<I = std::time::Instant> {
     },
 }
 
-/// Errors from RoomManager operations
+/// Errors from `RoomManager` operations
 #[derive(Debug, thiserror::Error)]
 pub enum RoomError {
     /// Sequencer error occurred
@@ -111,7 +111,7 @@ pub enum RoomError {
 }
 
 impl RoomManager {
-    /// Create a new RoomManager
+    /// Create a new `RoomManager`
     pub fn new() -> Self {
         Self { sequencer: Sequencer::new(), room_metadata: HashMap::new() }
     }
@@ -201,7 +201,7 @@ impl RoomManager {
     /// Recover a room from storage during server startup.
     ///
     /// Loads room metadata from the ROOMS table, then initializes
-    /// the sequencer with the correct next_log_index from frames.
+    /// the sequencer with the correct `next_log_index` from frames.
     ///
     /// # Errors
     ///

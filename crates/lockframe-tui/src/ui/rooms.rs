@@ -40,10 +40,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                 RoomDisplayState::Normal
             };
 
-            let full_hex = format!("{:x}", room_id);
+            let full_hex = format!("{room_id:x}");
             let tail = &full_hex[full_hex.len().saturating_sub(ROOM_ID_HEX_WIDTH)..];
             let room_name =
-                format!("{}{:0>width$}", ROOM_ID_PREFIX, tail, width = ROOM_ID_HEX_WIDTH);
+                format!("{ROOM_ID_PREFIX}{tail:0>ROOM_ID_HEX_WIDTH$}");
 
             let (prefix, suffix, style) = match state {
                 RoomDisplayState::Active => (

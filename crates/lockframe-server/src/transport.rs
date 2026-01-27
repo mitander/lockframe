@@ -53,7 +53,7 @@ impl QuinnTransport {
         key_path: Option<String>,
     ) -> Result<Self, ServerError> {
         let addr: SocketAddr = address.parse().map_err(|e| {
-            ServerError::Config(format!("invalid bind address '{}': {}", address, e))
+            ServerError::Config(format!("invalid bind address '{address}': {e}"))
         })?;
 
         let server_config = match (cert_path, key_path) {
@@ -62,7 +62,7 @@ impl QuinnTransport {
         };
 
         let endpoint = Endpoint::server(server_config, addr)
-            .map_err(|e| ServerError::Transport(format!("failed to create endpoint: {}", e)))?;
+            .map_err(|e| ServerError::Transport(format!("failed to create endpoint: {e}")))?;
 
         tracing::info!("QUIC transport bound to {}", addr);
 
@@ -81,7 +81,7 @@ impl QuinnTransport {
 
         let conn = incoming
             .await
-            .map_err(|e| ServerError::Transport(format!("connection failed: {}", e)))?;
+            .map_err(|e| ServerError::Transport(format!("connection failed: {e}")))?;
 
         Ok(QuinnConnection { connection: conn })
     }
@@ -90,15 +90,15 @@ impl QuinnTransport {
     pub fn local_addr(&self) -> Result<SocketAddr, ServerError> {
         self.endpoint
             .local_addr()
-            .map_err(|e| ServerError::Transport(format!("failed to get local address: {}", e)))
+            .map_err(|e| ServerError::Transport(format!("failed to get local address: {e}")))
     }
 }
 
 /// A QUIC connection wrapper.
 ///
 /// Wraps Quinn's connection type and provides stream operations. Supports both
-/// bidirectional streams (accept_bi for server-initiated) and unidirectional
-/// streams (open_uni for server-to-client sends).
+/// bidirectional streams (`accept_bi` for server-initiated) and unidirectional
+/// streams (`open_uni` for server-to-client sends).
 ///
 /// # Cloning
 ///
@@ -122,7 +122,7 @@ impl QuinnConnection {
         self.connection
             .accept_bi()
             .await
-            .map_err(|e| ServerError::Transport(format!("accept_bi failed: {}", e)))
+            .map_err(|e| ServerError::Transport(format!("accept_bi failed: {e}")))
     }
 
     /// Open a unidirectional stream for sending.
@@ -130,7 +130,7 @@ impl QuinnConnection {
         self.connection
             .open_uni()
             .await
-            .map_err(|e| ServerError::Transport(format!("open_uni failed: {}", e)))
+            .map_err(|e| ServerError::Transport(format!("open_uni failed: {e}")))
     }
 
     /// Remote peer address.
@@ -149,29 +149,29 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Serv
     use std::fs;
 
     let cert_pem = fs::read(cert_path)
-        .map_err(|e| ServerError::Config(format!("failed to read cert '{}': {}", cert_path, e)))?;
+        .map_err(|e| ServerError::Config(format!("failed to read cert '{cert_path}': {e}")))?;
 
     let key_pem = fs::read(key_path)
-        .map_err(|e| ServerError::Config(format!("failed to read key '{}': {}", key_path, e)))?;
+        .map_err(|e| ServerError::Config(format!("failed to read key '{key_path}': {e}")))?;
 
     let certs = rustls_pemfile::certs(&mut &cert_pem[..])
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| ServerError::Config(format!("failed to parse certificates: {}", e)))?;
+        .map_err(|e| ServerError::Config(format!("failed to parse certificates: {e}")))?;
 
     let key = rustls_pemfile::private_key(&mut &key_pem[..])
-        .map_err(|e| ServerError::Config(format!("failed to parse private key: {}", e)))?
+        .map_err(|e| ServerError::Config(format!("failed to parse private key: {e}")))?
         .ok_or_else(|| ServerError::Config("no private key found".to_string()))?;
 
     let mut tls_config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
-        .map_err(|e| ServerError::Config(format!("invalid TLS config: {}", e)))?;
+        .map_err(|e| ServerError::Config(format!("invalid TLS config: {e}")))?;
 
     tls_config.alpn_protocols = vec![ALPN_PROTOCOL.to_vec()];
 
     let server_config = ServerConfig::with_crypto(Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
-            .map_err(|e| ServerError::Config(format!("QUIC config error: {}", e)))?,
+            .map_err(|e| ServerError::Config(format!("QUIC config error: {e}")))?,
     ));
 
     Ok(server_config)
@@ -180,7 +180,7 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Serv
 /// Generate a self-signed certificate for testing.
 fn generate_self_signed_config() -> Result<ServerConfig, ServerError> {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
-        .map_err(|e| ServerError::Config(format!("failed to generate self-signed cert: {}", e)))?;
+        .map_err(|e| ServerError::Config(format!("failed to generate self-signed cert: {e}")))?;
 
     let cert_der = cert.cert.der().clone();
     let key_der = cert.key_pair.serialize_der();
@@ -191,13 +191,13 @@ fn generate_self_signed_config() -> Result<ServerConfig, ServerError> {
     let mut tls_config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert_chain, key.into())
-        .map_err(|e| ServerError::Config(format!("invalid TLS config: {}", e)))?;
+        .map_err(|e| ServerError::Config(format!("invalid TLS config: {e}")))?;
 
     tls_config.alpn_protocols = vec![ALPN_PROTOCOL.to_vec()];
 
     let server_config = ServerConfig::with_crypto(Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
-            .map_err(|e| ServerError::Config(format!("QUIC config error: {}", e)))?,
+            .map_err(|e| ServerError::Config(format!("QUIC config error: {e}")))?,
     ));
 
     tracing::warn!("Using self-signed certificate - not for production use!");

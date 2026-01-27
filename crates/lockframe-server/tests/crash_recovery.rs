@@ -1,4 +1,4 @@
-//! Crash recovery tests for RedbStorage.
+//! Crash recovery tests for `RedbStorage`.
 //!
 //! These tests verify that data persists across database close/reopen cycles,
 //! simulating server restarts.
@@ -146,7 +146,7 @@ fn test_multiple_rooms_survive_restart() {
             let room_id = room_idx as u128;
 
             let frames = storage.load_frames(room_id, 0, 100).unwrap();
-            assert_eq!(frames.len(), frames_per_room as usize, "room {} frame count", room_idx);
+            assert_eq!(frames.len(), frames_per_room as usize, "room {room_idx} frame count");
 
             let state = storage.load_mls_state(room_id).unwrap().unwrap();
             assert_eq!(state.epoch, room_idx as u64);
