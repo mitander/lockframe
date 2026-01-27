@@ -49,6 +49,9 @@ redb = "2"
 # CBOR serialization (for MLS state)
 ciborium = "0.2"
 
+# Serialization
+serde = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3"

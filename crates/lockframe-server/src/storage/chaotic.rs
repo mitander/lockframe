@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::Frame;
 
-use super::{Storage, StorageError};
+use super::{Storage, StorageError, StoredRoomMetadata};
 
 /// Chaotic storage wrapper that randomly injects failures
 ///
@@ -185,6 +185,37 @@ impl<S: Storage> Storage for ChaoticStorage<S> {
             return Err(StorageError::Io("chaotic failure injection".to_string()));
         }
         self.inner.load_group_info(room_id)
+    }
+
+    fn list_rooms(&self) -> Result<Vec<u128>, StorageError> {
+        self.increment_operation_count();
+        if self.should_fail() {
+            return Err(StorageError::Io("chaotic failure injection".to_string()));
+        }
+        self.inner.list_rooms()
+    }
+
+    fn create_room(
+        &self,
+        room_id: u128,
+        metadata: &StoredRoomMetadata,
+    ) -> Result<(), StorageError> {
+        self.increment_operation_count();
+        if self.should_fail() {
+            return Err(StorageError::Io("chaotic failure injection".to_string()));
+        }
+        self.inner.create_room(room_id, metadata)
+    }
+
+    fn load_room_metadata(
+        &self,
+        room_id: u128,
+    ) -> Result<Option<StoredRoomMetadata>, StorageError> {
+        self.increment_operation_count();
+        if self.should_fail() {
+            return Err(StorageError::Io("chaotic failure injection".to_string()));
+        }
+        self.inner.load_room_metadata(room_id)
     }
 }
 

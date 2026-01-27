@@ -9,7 +9,7 @@ use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::Frame;
 use redb::{Database, ReadableTable, TableDefinition};
 
-use super::{Storage, StorageError};
+use super::{Storage, StorageError, StoredRoomMetadata};
 
 /// Table: frames
 /// Key: (room_id: u128, log_index: u64) as big-endian bytes [24 bytes]
@@ -26,6 +26,11 @@ const MLS_STATE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("mls_state
 /// Value: epoch (8 bytes BE) + group_info bytes
 const GROUP_INFO: TableDefinition<&[u8], &[u8]> = TableDefinition::new("group_info");
 
+/// Table: rooms
+/// Key: room_id as big-endian bytes [16 bytes]
+/// Value: CBOR-encoded StoredRoomMetadata
+const ROOMS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("rooms");
+
 /// Durable storage backed by Redb.
 ///
 /// Thread-safe through Redb's internal locking. Clone is cheap (Arc).
@@ -37,7 +42,8 @@ pub struct RedbStorage {
 impl RedbStorage {
     /// Open or create a Redb database at the given path.
     ///
-    /// Creates tables if they don't exist (FRAMES, MLS_STATE, GROUP_INFO).
+    /// Creates tables if they don't exist (FRAMES, MLS_STATE, GROUP_INFO,
+    /// ROOMS).
     ///
     /// # Errors
     ///
@@ -50,6 +56,7 @@ impl RedbStorage {
             let _ = txn.open_table(FRAMES).map_err(|e| StorageError::Io(e.to_string()))?;
             let _ = txn.open_table(MLS_STATE).map_err(|e| StorageError::Io(e.to_string()))?;
             let _ = txn.open_table(GROUP_INFO).map_err(|e| StorageError::Io(e.to_string()))?;
+            let _ = txn.open_table(ROOMS).map_err(|e| StorageError::Io(e.to_string()))?;
         }
         txn.commit().map_err(|e| StorageError::Io(e.to_string()))?;
 
@@ -259,6 +266,72 @@ impl Storage for RedbStorage {
                 let group_info = bytes[8..].to_vec();
 
                 Ok(Some((epoch, group_info)))
+            },
+            None => Ok(None),
+        }
+    }
+
+    fn list_rooms(&self) -> Result<Vec<u128>, StorageError> {
+        let txn = self.db.begin_read().map_err(|e| StorageError::Io(e.to_string()))?;
+
+        let table = txn.open_table(ROOMS).map_err(|e| StorageError::Io(e.to_string()))?;
+
+        let mut rooms = Vec::new();
+
+        for result in table.iter().map_err(|e| StorageError::Io(e.to_string()))? {
+            let (key, _) = result.map_err(|e| StorageError::Io(e.to_string()))?;
+            let room_id = u128::from_be_bytes(key.value().try_into().expect("key is 16 bytes"));
+            rooms.push(room_id);
+        }
+
+        Ok(rooms)
+    }
+
+    fn create_room(
+        &self,
+        room_id: u128,
+        metadata: &StoredRoomMetadata,
+    ) -> Result<(), StorageError> {
+        let txn = self.db.begin_write().map_err(|e| StorageError::Io(e.to_string()))?;
+
+        {
+            let mut table = txn.open_table(ROOMS).map_err(|e| StorageError::Io(e.to_string()))?;
+
+            let key = encode_room_key(room_id);
+
+            if table.get(key.as_slice()).map_err(|e| StorageError::Io(e.to_string()))?.is_some() {
+                return Ok(()); // Already exists, don't overwrite
+            }
+
+            let mut bytes = Vec::new();
+            ciborium::into_writer(metadata, &mut bytes)
+                .map_err(|e| StorageError::Serialization(e.to_string()))?;
+
+            table
+                .insert(key.as_slice(), bytes.as_slice())
+                .map_err(|e| StorageError::Io(e.to_string()))?;
+        }
+
+        txn.commit().map_err(|e| StorageError::Io(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn load_room_metadata(
+        &self,
+        room_id: u128,
+    ) -> Result<Option<StoredRoomMetadata>, StorageError> {
+        let txn = self.db.begin_read().map_err(|e| StorageError::Io(e.to_string()))?;
+
+        let table = txn.open_table(ROOMS).map_err(|e| StorageError::Io(e.to_string()))?;
+
+        let key = encode_room_key(room_id);
+
+        match table.get(key.as_slice()).map_err(|e| StorageError::Io(e.to_string()))? {
+            Some(value) => {
+                let metadata: StoredRoomMetadata = ciborium::from_reader(value.value())
+                    .map_err(|e| StorageError::Serialization(e.to_string()))?;
+                Ok(Some(metadata))
             },
             None => Ok(None),
         }
@@ -510,5 +583,61 @@ mod tests {
         let (epoch, bytes) = storage.load_group_info(room_id).unwrap().unwrap();
         assert_eq!(epoch, 2);
         assert_eq!(bytes, b"epoch2");
+    }
+
+    #[test]
+    fn test_list_rooms() {
+        let dir = tempdir().unwrap();
+        let storage = RedbStorage::open(dir.path().join("test.redb")).unwrap();
+
+        assert_eq!(storage.list_rooms().unwrap(), vec![]);
+
+        for room_id in [100u128, 200, 300] {
+            let metadata = StoredRoomMetadata { creator: room_id as u64, created_at_secs: 0 };
+            storage.create_room(room_id, &metadata).unwrap();
+        }
+
+        let mut rooms = storage.list_rooms().unwrap();
+        rooms.sort();
+        assert_eq!(rooms, vec![100, 200, 300]);
+    }
+
+    #[test]
+    fn test_create_room() {
+        let dir = tempdir().unwrap();
+        let storage = RedbStorage::open(dir.path().join("test.redb")).unwrap();
+
+        let room_id = 100u128;
+        let metadata = StoredRoomMetadata { creator: 42, created_at_secs: 1_234_567_890 };
+
+        storage.create_room(room_id, &metadata).unwrap();
+
+        let loaded = storage.load_room_metadata(room_id).unwrap().unwrap();
+        assert_eq!(loaded.creator, 42);
+        assert_eq!(loaded.created_at_secs, 1_234_567_890);
+    }
+
+    #[test]
+    fn test_create_room_idempotent() {
+        let dir = tempdir().unwrap();
+        let storage = RedbStorage::open(dir.path().join("test.redb")).unwrap();
+
+        let room_id = 100u128;
+        let metadata1 = StoredRoomMetadata { creator: 42, created_at_secs: 100 };
+        let metadata2 = StoredRoomMetadata { creator: 99, created_at_secs: 200 };
+
+        storage.create_room(room_id, &metadata1).unwrap();
+        storage.create_room(room_id, &metadata2).unwrap(); // Should not overwrite
+
+        let loaded = storage.load_room_metadata(room_id).unwrap().unwrap();
+        assert_eq!(loaded.creator, 42); // Original creator preserved
+    }
+
+    #[test]
+    fn test_load_room_metadata_not_found() {
+        let dir = tempdir().unwrap();
+        let storage = RedbStorage::open(dir.path().join("test.redb")).unwrap();
+
+        assert!(storage.load_room_metadata(999).unwrap().is_none());
     }
 }

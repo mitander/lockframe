@@ -1778,6 +1778,7 @@ dependencies = [
  "redb",
  "rustls",
  "rustls-pemfile",
+ "serde",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",

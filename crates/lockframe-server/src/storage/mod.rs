@@ -13,8 +13,21 @@ pub use error::StorageError;
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::Frame;
 pub use memory::MemoryStorage;
+use serde::{Deserialize, Serialize};
 
 pub use self::redb::RedbStorage;
+
+/// Metadata about a room stored in the ROOMS table.
+///
+/// This is persisted separately from frames to survive frame deletion
+/// (e.g., retention policies) and enable O(rooms) enumeration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredRoomMetadata {
+    /// User ID who created the room.
+    pub creator: u64,
+    /// Unix timestamp (seconds) when room was created.
+    pub created_at_secs: u64,
+}
 
 /// Storage abstraction for frames and MLS group state
 ///
@@ -80,4 +93,24 @@ pub trait Storage: Clone + Send + Sync + 'static {
     /// Returns GroupInfo `(epoch, group_info_bytes)` or `None` if room has no
     /// group info.
     fn load_group_info(&self, room_id: u128) -> Result<Option<(u64, Vec<u8>)>, StorageError>;
+
+    /// List all room IDs.
+    ///
+    /// Scans the ROOMS table (not FRAMES) for O(rooms) performance.
+    /// Used for server recovery to enumerate rooms on startup.
+    /// Order is not guaranteed.
+    fn list_rooms(&self) -> Result<Vec<u128>, StorageError>;
+
+    /// Create a room with metadata.
+    ///
+    /// Called when a room is first created. Idempotent - if room already
+    /// exists, this is a no-op (does not update metadata).
+    fn create_room(&self, room_id: u128, metadata: &StoredRoomMetadata)
+    -> Result<(), StorageError>;
+
+    /// Load room metadata.
+    ///
+    /// Returns `None` if room doesn't exist in the ROOMS table.
+    fn load_room_metadata(&self, room_id: u128)
+    -> Result<Option<StoredRoomMetadata>, StorageError>;
 }

@@ -6,7 +6,7 @@ use std::{
 use lockframe_core::mls::MlsGroupState;
 use lockframe_proto::Frame;
 
-use super::{Storage, StorageError};
+use super::{Storage, StorageError, StoredRoomMetadata};
 
 /// In-memory storage implementation for testing and simulation
 ///
@@ -21,6 +21,9 @@ pub struct MemoryStorage {
 }
 
 struct MemoryStorageInner {
+    /// Room metadata (creator, created_at)
+    rooms: HashMap<u128, StoredRoomMetadata>,
+
     /// Frames organized by room, stored in log_index order
     frames: HashMap<u128, Vec<Frame>>,
 
@@ -37,6 +40,7 @@ impl MemoryStorage {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(MemoryStorageInner {
+                rooms: HashMap::new(),
                 frames: HashMap::new(),
                 mls_states: HashMap::new(),
                 group_infos: HashMap::new(),
@@ -201,6 +205,44 @@ impl Storage for MemoryStorage {
         let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
 
         Ok(inner.group_infos.get(&room_id).cloned())
+    }
+
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
+    fn list_rooms(&self) -> Result<Vec<u128>, StorageError> {
+        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        Ok(inner.rooms.keys().copied().collect())
+    }
+
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
+    fn create_room(
+        &self,
+        room_id: u128,
+        metadata: &StoredRoomMetadata,
+    ) -> Result<(), StorageError> {
+        let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+
+        // Don't overwrite if exists
+        inner.rooms.entry(room_id).or_insert_with(|| metadata.clone());
+
+        Ok(())
+    }
+
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned. This is acceptable for test
+    /// code.
+    fn load_room_metadata(
+        &self,
+        room_id: u128,
+    ) -> Result<Option<StoredRoomMetadata>, StorageError> {
+        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        Ok(inner.rooms.get(&room_id).cloned())
     }
 }
 
@@ -407,5 +449,57 @@ mod tests {
 
         assert_eq!(loaded.epoch, 6);
         assert_eq!(loaded.members, vec![100, 200]);
+    }
+
+    #[test]
+    fn test_list_rooms() {
+        let storage = MemoryStorage::new();
+
+        // Initially empty
+        assert_eq!(storage.list_rooms().unwrap(), vec![]);
+
+        // Create rooms explicitly
+        for room_id in [100u128, 200, 300] {
+            let metadata = StoredRoomMetadata { creator: room_id as u64, created_at_secs: 0 };
+            storage.create_room(room_id, &metadata).unwrap();
+        }
+
+        // Should list all three rooms (even without frames)
+        let mut rooms = storage.list_rooms().unwrap();
+        rooms.sort();
+        assert_eq!(rooms, vec![100, 200, 300]);
+    }
+
+    #[test]
+    fn test_create_room() {
+        let storage = MemoryStorage::new();
+        let room_id = 100u128;
+        let metadata = StoredRoomMetadata { creator: 42, created_at_secs: 1234567890 };
+
+        storage.create_room(room_id, &metadata).unwrap();
+
+        let loaded = storage.load_room_metadata(room_id).unwrap().unwrap();
+        assert_eq!(loaded.creator, 42);
+        assert_eq!(loaded.created_at_secs, 1234567890);
+    }
+
+    #[test]
+    fn test_create_room_idempotent() {
+        let storage = MemoryStorage::new();
+        let room_id = 100u128;
+        let metadata1 = StoredRoomMetadata { creator: 42, created_at_secs: 100 };
+        let metadata2 = StoredRoomMetadata { creator: 99, created_at_secs: 200 };
+
+        storage.create_room(room_id, &metadata1).unwrap();
+        storage.create_room(room_id, &metadata2).unwrap(); // Should not overwrite
+
+        let loaded = storage.load_room_metadata(room_id).unwrap().unwrap();
+        assert_eq!(loaded.creator, 42); // Original creator preserved
+    }
+
+    #[test]
+    fn test_load_room_metadata_not_found() {
+        let storage = MemoryStorage::new();
+        assert!(storage.load_room_metadata(999).unwrap().is_none());
     }
 }
