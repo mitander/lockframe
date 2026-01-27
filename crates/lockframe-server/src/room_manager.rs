@@ -20,23 +20,20 @@ use crate::{
 
 /// Metadata about a room (extension point for future authorization)
 #[derive(Debug, Clone)]
-pub struct RoomMetadata<I> {
+pub struct RoomMetadata {
     /// User who created the room
     pub creator: u64, // UserId
-    /// When the room was created
-    pub created_at: I,
+    /// Unix timestamp (seconds since epoch) when room was created.
+    pub created_at_secs: u64,
     // Future: admins, members, permissions
 }
 
 /// Routes frames between clients, assigns log indices.
-/// Server is routing-only - does NOT participate in MLS.
-///
-/// Generic over `I` (Instant type) to support virtual time in tests.
-pub struct RoomManager<I = std::time::Instant> {
+pub struct RoomManager {
     /// Frame sequencer (assigns log indices)
     sequencer: Sequencer,
     /// Room metadata (for future authorization)
-    room_metadata: HashMap<u128, RoomMetadata<I>>,
+    room_metadata: HashMap<u128, RoomMetadata>,
 }
 
 /// Actions returned by RoomManager for driver to execute.
@@ -113,7 +110,7 @@ pub enum RoomError {
     RoomAlreadyExists(u128),
 }
 
-impl<I: Copy> RoomManager<I> {
+impl RoomManager {
     /// Create a new RoomManager
     pub fn new() -> Self {
         Self { sequencer: Sequencer::new(), room_metadata: HashMap::new() }
@@ -129,22 +126,22 @@ impl<I: Copy> RoomManager<I> {
     ///
     /// Persists room metadata to storage first, then updates in-memory state.
     /// The storage persistence is idempotent (won't overwrite existing rooms).
-    pub fn create_room<E: Environment<Instant = I>>(
+    pub fn create_room(
         &mut self,
         room_id: u128,
         creator: u64,
-        env: &E,
+        env: &impl Environment,
         storage: &impl Storage,
     ) -> Result<(), RoomError> {
         if self.has_room(room_id) {
             return Err(RoomError::RoomAlreadyExists(room_id));
         }
 
-        let stored_metadata =
-            StoredRoomMetadata { creator, created_at_secs: env.wall_clock_secs() };
+        let created_at_secs = env.wall_clock_secs();
+        let stored_metadata = StoredRoomMetadata { creator, created_at_secs };
         storage.create_room(room_id, &stored_metadata)?;
 
-        let metadata = RoomMetadata { creator, created_at: env.now() };
+        let metadata = RoomMetadata { creator, created_at_secs };
         self.room_metadata.insert(room_id, metadata);
 
         Ok(())
@@ -154,17 +151,15 @@ impl<I: Copy> RoomManager<I> {
     ///
     /// Loads frames from storage starting at `from_log_index` and returns
     /// a `SendSyncResponse` action for the driver to send back to the client.
-    pub fn handle_sync_request<E: Environment<Instant = I>>(
+    pub fn handle_sync_request<I: Copy>(
         &self,
         room_id: u128,
         sender_id: u64,
         from_log_index: u64,
         limit: usize,
-        env: &E,
+        now: I,
         storage: &impl Storage,
     ) -> Result<RoomAction<I>, RoomError> {
-        let now = env.now();
-
         if !self.has_room(room_id) {
             return Err(RoomError::RoomNotFound(room_id));
         }
@@ -213,12 +208,7 @@ impl<I: Copy> RoomManager<I> {
     /// - `RoomError::RoomNotFound` if room doesn't exist in ROOMS table
     /// - `RoomError::Storage` if storage query fails
     /// - `RoomError::Sequencing` if sequencer initialization fails
-    pub fn recover_room(
-        &mut self,
-        room_id: u128,
-        now: I,
-        storage: &impl Storage,
-    ) -> Result<(), RoomError> {
+    pub fn recover_room(&mut self, room_id: u128, storage: &impl Storage) -> Result<(), RoomError> {
         if self.room_metadata.contains_key(&room_id) {
             return Ok(());
         }
@@ -226,9 +216,9 @@ impl<I: Copy> RoomManager<I> {
         let stored =
             storage.load_room_metadata(room_id)?.ok_or(RoomError::RoomNotFound(room_id))?;
 
-        // Note: created_at uses current time since original time is lost
-        self.room_metadata
-            .insert(room_id, RoomMetadata { creator: stored.creator, created_at: now });
+        let metadata =
+            RoomMetadata { creator: stored.creator, created_at_secs: stored.created_at_secs };
+        self.room_metadata.insert(room_id, metadata);
 
         self.sequencer.initialize_room(room_id, storage)?;
 
@@ -242,14 +232,12 @@ impl<I: Copy> RoomManager<I> {
     /// 1. Verifies room exists (metadata check)
     /// 2. Sequences frames (assigns log index)
     /// 3. Routes frames to room subscribers
-    pub fn process_frame<E: Environment<Instant = I>>(
+    pub fn process_frame<I: Copy>(
         &mut self,
         frame: Frame,
-        env: &E,
+        now: I,
         storage: &impl Storage,
     ) -> Result<Vec<RoomAction<I>>, RoomError> {
-        let now = env.now();
-
         // 1. Room must exist (check metadata)
         let room_id = frame.header.room_id();
         if !self.has_room(room_id) {
@@ -293,13 +281,13 @@ impl<I: Copy> RoomManager<I> {
     }
 }
 
-impl<I: Copy> Default for RoomManager<I> {
+impl Default for RoomManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<I: Copy> std::fmt::Debug for RoomManager<I> {
+impl std::fmt::Debug for RoomManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RoomManager")
             .field("room_count", &self.room_metadata.len())
@@ -341,8 +329,7 @@ mod tests {
 
         // Create room manager and recover
         let mut room_manager = RoomManager::new();
-        let now = std::time::Instant::now();
-        room_manager.recover_room(room_id, now, &storage).unwrap();
+        room_manager.recover_room(room_id, &storage).unwrap();
 
         // Room should exist
         assert!(room_manager.has_room(room_id));
@@ -361,11 +348,10 @@ mod tests {
         storage.store_frame(room_id, 0, &frame).unwrap();
 
         let mut room_manager = RoomManager::new();
-        let now = std::time::Instant::now();
 
         // Recover twice (should be idempotent)
-        room_manager.recover_room(room_id, now, &storage).unwrap();
-        room_manager.recover_room(room_id, now, &storage).unwrap();
+        room_manager.recover_room(room_id, &storage).unwrap();
+        room_manager.recover_room(room_id, &storage).unwrap();
 
         assert!(room_manager.has_room(room_id));
     }
@@ -376,10 +362,9 @@ mod tests {
         let room_id = 100u128;
 
         let mut room_manager = RoomManager::new();
-        let now = std::time::Instant::now();
 
         // Recovering a room that doesn't exist should fail
-        let result = room_manager.recover_room(room_id, now, &storage);
+        let result = room_manager.recover_room(room_id, &storage);
         assert!(result.is_err(), "expected error for nonexistent room");
     }
 
@@ -394,8 +379,7 @@ mod tests {
         storage.create_room(room_id, &metadata).unwrap();
 
         let mut room_manager = RoomManager::new();
-        let now = std::time::Instant::now();
-        room_manager.recover_room(room_id, now, &storage).unwrap();
+        room_manager.recover_room(room_id, &storage).unwrap();
 
         // Verify room exists
         assert!(room_manager.has_room(room_id));

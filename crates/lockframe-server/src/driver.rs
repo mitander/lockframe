@@ -148,7 +148,7 @@ where
     /// Session/room registry
     pub(crate) registry: ConnectionRegistry,
     /// Room manager (routing + sequencing)
-    room_manager: RoomManager<E::Instant>,
+    room_manager: RoomManager,
     /// KeyPackage registry for publish/fetch operations
     key_package_registry: KeyPackageRegistry,
     /// Storage backend
@@ -337,8 +337,7 @@ where
 
             Some(Opcode::AppMessage) => {
                 conn.update_activity(now);
-                let room_actions =
-                    self.room_manager.process_frame(frame, &self.env, &self.storage)?;
+                let room_actions = self.room_manager.process_frame(frame, now, &self.storage)?;
 
                 for room_action in room_actions {
                     actions.extend(self.convert_room_action(room_action, session_id));
@@ -370,8 +369,7 @@ where
                     });
                 }
 
-                let room_actions =
-                    self.room_manager.process_frame(frame, &self.env, &self.storage)?;
+                let room_actions = self.room_manager.process_frame(frame, now, &self.storage)?;
 
                 for room_action in room_actions {
                     actions.extend(self.convert_room_action(room_action, session_id));
@@ -389,6 +387,7 @@ where
         frame: &Frame,
     ) -> Vec<ServerAction<E::Instant>> {
         let room_id = frame.header.room_id();
+        let now = self.env.now();
 
         let result = (|| -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
             let payload = Payload::from_frame(frame.clone())?;
@@ -404,7 +403,7 @@ where
                 session_id,
                 from_log_index,
                 limit,
-                &self.env,
+                now,
                 &self.storage,
             )?;
 
@@ -1106,12 +1105,11 @@ where
         let room_ids = self.storage.list_rooms()?;
 
         let room_count = room_ids.len();
-        let now = self.env.now();
 
         tracing::info!(room_count, "Recovering rooms from storage");
 
         for room_id in room_ids {
-            self.room_manager.recover_room(room_id, now, &self.storage)?;
+            self.room_manager.recover_room(room_id, &self.storage)?;
         }
 
         tracing::info!(room_count, "Room recovery complete");
@@ -1121,7 +1119,7 @@ where
 
     /// Access the room manager (for testing).
     #[cfg(test)]
-    pub fn room_manager(&self) -> &RoomManager<E::Instant> {
+    pub fn room_manager(&self) -> &RoomManager {
         &self.room_manager
     }
 }
