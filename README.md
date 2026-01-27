@@ -1,5 +1,8 @@
 # lockframe
 
+[![CI](https://github.com/lockframe-protocol/lockframe/actions/workflows/ci.yml/badge.svg)](https://github.com/lockframe-protocol/lockframe/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/lockframe-protocol/lockframe/branch/master/graph/badge.svg)](https://codecov.io/gh/lockframe-protocol/lockframe)
+
 A high-assurance messaging protocol combining **End-to-End Encryption** with **Server-Side Moderation**.
 
 Built on [MLS](https://www.rfc-editor.org/rfc/rfc9420.pdf) and [QUIC](https://www.rfc-editor.org/rfc/rfc9000.pdf) which allows servers to cryptographically enforce bans, ordering, and group membership without accessing message content.

@@ -1,0 +1,80 @@
+name: Nightly Fuzzing
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FUZZ_TIME: 3600 # 1 hour per fuzzer
+
+jobs:
+  extended-fuzzing:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 70 # 1h10m per fuzzer (with safety margin)
+    strategy:
+      fail-fast: false # Don't stop other fuzzers if one crashes
+      matrix:
+        target:
+          - mls_signature_fuzzer
+          - connection_state_fuzzer
+          - frame_boundary_fuzzer
+          - room_manager_fuzzer
+          - sequencer_state_fuzzer
+          - e2e_pipeline_fuzzer
+          - cbor_attack_fuzzer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@cargo-fuzz
+
+      - name: Cache Cargo (target-specific)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            fuzz/target/
+            fuzz/corpus/${{ matrix.target }}
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-${{ matrix.target }}-
+            ${{ runner.os }}-fuzz-
+
+      - name: Run Fuzzer (${{ env.FUZZ_TIME }}s)
+        run: |
+          cd fuzz
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_TIME }}
+
+      - name: Minimize Corpus
+        if: success()
+        run: |
+          cd fuzz
+          cargo fuzz cmin ${{ matrix.target }}
+
+      - name: Upload Corpus
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}
+          retention-days: 7
+
+      - name: Upload Crash Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}
+          retention-days: 30
