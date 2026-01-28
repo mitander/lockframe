@@ -35,9 +35,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
-        uses: taiki-e/install-action@cargo-fuzz
-        with:
-          toolchain: nightly
+        run: cargo install cargo-fuzz --locked
 
       - name: Cache Cargo (target-specific)
         uses: actions/cache@v4
