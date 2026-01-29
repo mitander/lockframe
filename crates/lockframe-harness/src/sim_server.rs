@@ -12,7 +12,7 @@ use std::{
 
 use lockframe_proto::Frame;
 use lockframe_server::{
-    DriverConfig, LogLevel, MemoryStorage, ServerAction, ServerDriver, ServerEvent, Storage,
+    DriverConfig, LogLevel, MemoryStorage, ServerAction, ServerDriver, ServerEvent,
 };
 use tokio::{
     io::{AsyncWriteExt, WriteHalf},
@@ -106,24 +106,14 @@ impl SimServer {
                     self.send_frame(session_id, &frame).await?;
                 },
 
-                ServerAction::BroadcastToRoom { room_id, frame, exclude_session } => {
-                    // Get all sessions in room and send to each
-                    let sessions: Vec<u64> = self.driver.sessions_in_room(room_id).collect();
-                    for session_id in sessions {
-                        if Some(session_id) != exclude_session {
-                            self.send_frame(session_id, &frame).await?;
-                        }
+                ServerAction::Broadcast { session_ids, frame } => {
+                    for session_id in session_ids {
+                        self.send_frame(session_id, &frame).await?;
                     }
                 },
 
                 ServerAction::CloseConnection { session_id, reason } => {
                     self.close_connection(session_id, &reason);
-                },
-
-                ServerAction::PersistFrame { room_id, log_index, frame } => {
-                    if let Err(e) = self.driver.storage().store_frame(room_id, log_index, &frame) {
-                        tracing::error!(room_id, log_index, error = %e, "Failed to persist frame");
-                    }
                 },
 
                 ServerAction::Log { level, message, .. } => {

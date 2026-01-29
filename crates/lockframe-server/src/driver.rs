@@ -19,7 +19,7 @@ use crate::{
     registry::{ConnectionRegistry, SessionInfo},
     room_manager::{RoomAction, RoomManager},
     server_error::ServerError,
-    storage::Storage,
+    storage::{Storage, StorageError},
 };
 
 /// Server configuration
@@ -83,14 +83,12 @@ pub enum ServerAction<I = std::time::Instant> {
         frame: Frame,
     },
 
-    /// Broadcast frame to all sessions in a room
-    BroadcastToRoom {
-        /// Target room ID
-        room_id: u128,
+    /// Broadcast frame to a list of sessions
+    Broadcast {
+        /// Target session IDs
+        session_ids: Vec<u64>,
         /// Frame to broadcast
         frame: Frame,
-        /// Optional session to exclude from broadcast
-        exclude_session: Option<u64>,
     },
 
     /// Close a connection
@@ -99,16 +97,6 @@ pub enum ServerAction<I = std::time::Instant> {
         session_id: u64,
         /// Reason for closure
         reason: String,
-    },
-
-    /// Persist a frame to storage
-    PersistFrame {
-        /// Room the frame belongs to
-        room_id: u128,
-        /// Log index for this frame
-        log_index: u64,
-        /// Frame to persist
-        frame: Frame,
     },
 
     /// Log a message (for debugging/monitoring)
@@ -340,7 +328,7 @@ where
                 let room_actions = self.room_manager.process_frame(frame, now, &self.storage)?;
 
                 for room_action in room_actions {
-                    actions.extend(self.convert_room_action(room_action, session_id));
+                    actions.extend(self.process_room_action(room_action, session_id));
                 }
             },
 
@@ -372,7 +360,7 @@ where
                 let room_actions = self.room_manager.process_frame(frame, now, &self.storage)?;
 
                 for room_action in room_actions {
-                    actions.extend(self.convert_room_action(room_action, session_id));
+                    actions.extend(self.process_room_action(room_action, session_id));
                 }
             },
         }
@@ -407,7 +395,7 @@ where
                 &self.storage,
             )?;
 
-            Ok(self.convert_room_action(room_action, session_id))
+            Ok(self.process_room_action(room_action, session_id))
         })();
 
         match result {
@@ -943,37 +931,53 @@ where
         Ok(actions)
     }
 
-    /// Convert a RoomAction to ServerActions.
-    fn convert_room_action(
-        &self,
+    /// Convert a `RoomAction` to `ServerActions`.
+    fn process_room_action(
+        &mut self,
         room_action: RoomAction<E::Instant>,
         sender_session_id: u64,
     ) -> Vec<ServerAction<E::Instant>> {
         match room_action {
             RoomAction::Broadcast { room_id, frame, exclude_sender, .. } => {
                 if frame.header.opcode_enum() == Some(Opcode::Welcome) {
-                    // Welcome frames are routed to recipients
                     let recipient_id = frame.header.recipient_id();
                     if let Some(session_id) = self.registry.session_id_for_user(recipient_id) {
                         return vec![ServerAction::SendToSession { session_id, frame }];
-                    } else {
-                        return vec![ServerAction::Log {
-                            level: LogLevel::Warn,
-                            message: format!(
-                                "Welcome recipient {} not connected (room {})",
-                                recipient_id, room_id
-                            ),
-                            timestamp: self.env.now(),
-                        }];
+                    }
+                    return vec![ServerAction::Log {
+                        level: LogLevel::Warn,
+                        message: format!(
+                            "Welcome recipient {recipient_id} not connected (room {room_id})"
+                        ),
+                        timestamp: self.env.now(),
+                    }];
+                }
+
+                let mut session_ids: Vec<u64> = self.sessions_in_room(room_id).collect();
+                if exclude_sender {
+                    if let Some(pos) = session_ids.iter().position(|&id| id == sender_session_id) {
+                        session_ids.remove(pos);
                     }
                 }
 
-                let is_sender = if exclude_sender { Some(sender_session_id) } else { None };
-                vec![ServerAction::BroadcastToRoom { room_id, frame, exclude_session: is_sender }]
+                vec![ServerAction::Broadcast { session_ids, frame }]
             },
 
             RoomAction::PersistFrame { room_id, log_index, frame, .. } => {
-                vec![ServerAction::PersistFrame { room_id, log_index, frame }]
+                if let Err(e) = self.storage.store_frame(room_id, log_index, &frame) {
+                    // Sequencer state drifted from storage. Re-initialize
+                    // room state from storage on next frame to sync
+                    if let StorageError::Conflict { .. } = e {
+                        self.clear_room_sequencer(room_id);
+                    }
+
+                    return vec![ServerAction::Log {
+                        level: LogLevel::Error,
+                        message: format!("Failed to persist frame: {}", e),
+                        timestamp: self.env.now(),
+                    }];
+                }
+                vec![]
             },
 
             RoomAction::Reject { sender_id, reason, processed_at } => {
@@ -1384,7 +1388,7 @@ mod tests {
 
         // Create driver and recover
         let env = MockEnv::with_crypto_rng();
-        let mut driver = ServerDriver::new(env, storage.clone(), ServerConfig::default());
+        let mut driver = ServerDriver::new(env, storage, ServerConfig::default());
         driver.recover_from_storage().unwrap();
 
         // Accept a connection and process a new frame
@@ -1399,11 +1403,13 @@ mod tests {
         header.set_log_index(3); // Next expected index
         let frame = Frame::new(header, Bytes::from("new message"));
 
-        let actions =
-            driver.process_event(ServerEvent::FrameReceived { session_id: 1, frame }).unwrap();
+        let _actions = driver
+            .process_event(ServerEvent::FrameReceived { session_id: 1, frame: frame.clone() })
+            .unwrap();
 
-        // Should have persist and broadcast actions
-        let has_persist = actions.iter().any(|a| matches!(a, ServerAction::PersistFrame { .. }));
-        assert!(has_persist, "should have persist action for new frame");
+        // Verify the frame was persisted
+        let stored_frames = driver.storage().load_frames(room_id, 3, 1).unwrap();
+        assert_eq!(stored_frames.len(), 1);
+        assert_eq!(stored_frames[0], frame);
     }
 }

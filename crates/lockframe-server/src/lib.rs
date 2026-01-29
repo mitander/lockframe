@@ -176,11 +176,11 @@ async fn handle_connection(
         streams.insert(session_id, tokio::sync::Mutex::new(outbound_stream));
     }
 
-    {
+    let actions = {
         let mut driver = driver.lock().await;
-        let actions = driver.process_event(ServerEvent::ConnectionAccepted { session_id })?;
-        execute_actions(&mut *driver, actions, &shared).await?;
-    }
+        driver.process_event(ServerEvent::ConnectionAccepted { session_id })?
+    };
+    execute_actions(actions, &shared).await?;
 
     loop {
         match conn.accept_bi().await {
@@ -211,14 +211,14 @@ async fn handle_connection(
         streams.remove(&session_id);
     }
 
-    {
+    let actions = {
         let mut driver = driver.lock().await;
-        let actions = driver.process_event(ServerEvent::ConnectionClosed {
+        driver.process_event(ServerEvent::ConnectionClosed {
             session_id,
             reason: "connection closed".to_string(),
-        })?;
-        execute_actions(&mut *driver, actions, &shared).await?;
-    }
+        })?
+    };
+    execute_actions(actions, &shared).await?;
 
     Ok(())
 }
@@ -284,10 +284,7 @@ async fn handle_stream(
             }
         };
 
-        {
-            let mut driver = driver.lock().await;
-            execute_actions(&mut *driver, actions, shared).await?;
-        }
+        execute_actions(actions, shared).await?;
     }
 
     Ok(())
@@ -295,7 +292,6 @@ async fn handle_stream(
 
 /// Execute server actions.
 async fn execute_actions(
-    driver: &mut ServerDriver<SystemEnv, MemoryStorage>,
     actions: Vec<ServerAction>,
     shared: &SharedState,
 ) -> Result<(), ServerError> {
@@ -316,24 +312,16 @@ async fn execute_actions(
                 }
             },
 
-            ServerAction::BroadcastToRoom { room_id, frame, exclude_session } => {
-                let sessions: Vec<u64> = driver.sessions_in_room(room_id).collect();
-
+            ServerAction::Broadcast { session_ids, frame } => {
                 let mut buf = Vec::new();
                 frame.encode(&mut buf).map_err(|e| ServerError::Protocol(e.to_string()))?;
 
                 let streams = shared.outbound_streams.read().await;
-                for session_id in sessions {
-                    if Some(session_id) != exclude_session {
-                        if let Some(stream_mutex) = streams.get(&session_id) {
-                            let mut stream = stream_mutex.lock().await;
-                            if let Err(e) = stream.write_all(&buf).await {
-                                tracing::warn!(
-                                    "BroadcastToRoom write failed for {}: {}",
-                                    session_id,
-                                    e
-                                );
-                            }
+                for session_id in session_ids {
+                    if let Some(stream_mutex) = streams.get(&session_id) {
+                        let mut stream = stream_mutex.lock().await;
+                        if let Err(e) = stream.write_all(&buf).await {
+                            tracing::warn!("Broadcast write failed for {}: {}", session_id, e);
                         }
                     }
                 }
@@ -344,22 +332,6 @@ async fn execute_actions(
                 let mut connections = shared.connections.write().await;
                 if let Some(conn) = connections.remove(&session_id) {
                     conn.close(0u32.into(), reason.as_bytes());
-                }
-            },
-
-            ServerAction::PersistFrame { room_id, log_index, frame } => {
-                if let Err(e) = driver.storage().store_frame(room_id, log_index, &frame) {
-                    tracing::error!("Failed to persist frame: {}", e);
-
-                    // Sequencer state drifted from storage. Re-initialize
-                    // room state from storage on next frame to sync
-                    if let StorageError::Conflict { .. } = e {
-                        tracing::warn!(
-                            %room_id,
-                            "Clearing sequencer state due to log index conflict"
-                        );
-                        driver.clear_room_sequencer(room_id);
-                    }
                 }
             },
 
