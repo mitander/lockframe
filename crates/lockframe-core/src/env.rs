@@ -87,7 +87,7 @@ pub mod test_utils {
             Arc, Mutex,
             atomic::{AtomicU64, Ordering},
         },
-        time::Instant,
+        time::Duration,
     };
 
     use rand::{RngCore, SeedableRng, rngs::StdRng};
@@ -96,22 +96,62 @@ pub mod test_utils {
 
     /// Mock environment with controllable time for deterministic testing.
     ///
-    /// Time starts at a fixed base instant and can be advanced manually via
-    /// `advance_time()`. This ensures tests are fully reproducible regardless
-    /// of when they run.
+    /// Time starts at a fixed virtual epoch (Duration::ZERO) and can be
+    /// advanced manually via `advance_time()`. This ensures tests are fully
+    /// reproducible regardless of when they run and eliminates any dependency
+    /// on the system clock.
     ///
     /// Randomness is provided by a StdRng that is either:
     /// - Seeded with a fixed value (deterministic mode)
     /// - Seeded from OS entropy (crypto mode for MLS tests)
     #[derive(Clone)]
     pub struct MockEnv {
-        /// Base instant (fixed for determinism)
-        base: Instant,
-        /// Time offset from base in nanoseconds (atomic for Send+Sync)
+        /// Time offset from virtual epoch in nanoseconds (atomic for Send+Sync)
         offset_nanos: Arc<AtomicU64>,
         /// RNG for random number generation
         /// Mutex allows interior mutability while maintaining Send+Sync
         rng: Arc<Mutex<StdRng>>,
+    }
+
+    /// Virtual instant for deterministic testing.
+    ///
+    /// Represents time as a duration from a fixed epoch, ensuring complete
+    /// determinism without any dependency on the system clock.
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct VirtualInstant(Duration);
+
+    impl VirtualInstant {
+        /// Creates a new virtual instant from the given duration since epoch.
+        pub fn from_duration(duration: Duration) -> Self {
+            Self(duration)
+        }
+
+        /// Returns the duration since the virtual epoch.
+        pub fn since_epoch(&self) -> Duration {
+            self.0
+        }
+    }
+
+    impl std::ops::Sub for VirtualInstant {
+        type Output = Duration;
+
+        fn sub(self, rhs: Self) -> Self::Output {
+            self.0 - rhs.0
+        }
+    }
+
+    impl std::ops::Add<Duration> for VirtualInstant {
+        type Output = Self;
+
+        fn add(self, rhs: Duration) -> Self::Output {
+            Self(self.0 + rhs)
+        }
+    }
+
+    impl std::fmt::Debug for VirtualInstant {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "VirtualInstant({:?})", self.0)
+        }
     }
 
     impl MockEnv {
@@ -119,9 +159,8 @@ pub mod test_utils {
         ///
         /// Uses a fixed seed (0) for the RNG to ensure tests are reproducible.
         pub fn new() -> Self {
-            let base = Instant::now();
             let rng = StdRng::seed_from_u64(0);
-            Self { base, offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
+            Self { offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
         }
 
         /// Create a mock environment with real cryptographic randomness.
@@ -129,9 +168,8 @@ pub mod test_utils {
         /// Uses OS entropy to seed the RNG. Use this for tests involving MLS
         /// or other crypto operations that need real randomness.
         pub fn with_crypto_rng() -> Self {
-            let base = Instant::now();
             let rng = StdRng::from_entropy();
-            Self { base, offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
+            Self { offset_nanos: Arc::new(AtomicU64::new(0)), rng: Arc::new(Mutex::new(rng)) }
         }
 
         /// Advance the mock clock by the given duration.
@@ -149,11 +187,11 @@ pub mod test_utils {
     }
 
     impl Environment for MockEnv {
-        type Instant = Instant;
+        type Instant = VirtualInstant;
 
-        fn now(&self) -> Instant {
+        fn now(&self) -> Self::Instant {
             let nanos = self.offset_nanos.load(Ordering::SeqCst);
-            self.base + Duration::from_nanos(nanos)
+            VirtualInstant(Duration::from_nanos(nanos))
         }
 
         fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {

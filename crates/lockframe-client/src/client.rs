@@ -1223,7 +1223,7 @@ mod tests {
     fn pending_adds_timeout_cleanup() {
         let env = MockEnv::new();
         let identity = ClientIdentity::new(42);
-        let mut client = Client::new(env, identity);
+        let mut client = Client::new(env.clone(), identity);
 
         let room_id = 0x1234_u128;
         client.handle(ClientEvent::CreateRoom { room_id }).unwrap();
@@ -1236,8 +1236,9 @@ mod tests {
         assert!(client.pending_adds.contains_key(&(room_id, user_id)));
 
         // Simulate time passing beyond timeout
-        let now = std::time::Instant::now() + KEY_PACKAGE_FETCH_TIMEOUT + Duration::from_secs(1);
-        let actions = client.handle(ClientEvent::Tick { now }).unwrap();
+        let mut current_time = env.now();
+        current_time = current_time + KEY_PACKAGE_FETCH_TIMEOUT + Duration::from_secs(1);
+        let actions = client.handle(ClientEvent::Tick { now: current_time }).unwrap();
 
         // Verify pending add was cleaned up
         assert!(!client.pending_adds.contains_key(&(room_id, user_id)));

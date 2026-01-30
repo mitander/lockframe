@@ -179,7 +179,7 @@ fn prop_connection_tick_monotonic_time() {
 
         // Call tick with monotonically increasing time
         for delta_ms in time_deltas {
-            t += Duration::from_millis(delta_ms);
+            t = t + Duration::from_millis(delta_ms);
             let _ = conn.tick(t);
 
             // INVARIANT: Connection should handle monotonic time gracefully
@@ -213,7 +213,7 @@ fn prop_connection_tick_linear_complexity() {
 
         // Call tick repeatedly with small time increments
         for _ in 0..tick_count {
-            t += Duration::from_millis(10);
+            t = t + Duration::from_millis(10);
             let actions = conn.tick(t);
             action_count += actions.len();
         }
