@@ -87,8 +87,8 @@ fuzz_target!(|input: FuzzInput| {
             let state = create_group_state(room_id, epoch, vec![sender_id], &verifying_key1);
 
             let original_result = MlsValidator::validate_signature(&frame, &state);
-            assert!(original_result.is_ok());
-            assert_eq!(original_result.unwrap(), ValidationResult::Accept);
+            assert_eq!(original_result, ValidationResult::Accept);
+            assert_eq!(original_result, ValidationResult::Accept);
 
             let mut corrupted_frame = frame.clone();
             let sig_bytes = corrupted_frame.header.signature();
@@ -102,9 +102,9 @@ fuzz_target!(|input: FuzzInput| {
                 corrupted_frame.header.set_signature(sig_array);
 
                 let result = MlsValidator::validate_signature(&corrupted_frame, &state);
-                assert!(result.is_ok());
+                assert!(matches!(result, ValidationResult::Reject { .. }));
 
-                if let ValidationResult::Accept = result.unwrap() {
+                if let ValidationResult::Accept = result {
                     panic!(
                         "SECURITY VIOLATION: Corrupted signature accepted! \
                          Flipped byte {} bit {}",
@@ -124,9 +124,9 @@ fuzz_target!(|input: FuzzInput| {
             let state = create_group_state(room_id, epoch, vec![sender_id], verifying_key);
 
             let result = MlsValidator::validate_signature(&frame, &state);
-            assert!(result.is_ok());
+            assert!(matches!(result, ValidationResult::Reject { .. }));
 
-            if let ValidationResult::Accept = result.unwrap() {
+            if let ValidationResult::Accept = result {
                 panic!("SECURITY VIOLATION: Signature from wrong key accepted!");
             }
         },
@@ -136,8 +136,8 @@ fuzz_target!(|input: FuzzInput| {
             let state = create_group_state(room_id, epoch, vec![sender_id], &verifying_key1);
 
             let original_result = MlsValidator::validate_signature(&original_frame, &state);
-            assert!(original_result.is_ok());
-            assert_eq!(original_result.unwrap(), ValidationResult::Accept);
+            assert_eq!(original_result, ValidationResult::Accept);
+            assert_eq!(original_result, ValidationResult::Accept);
 
             let mut tampered = original_frame.clone();
 
@@ -162,9 +162,9 @@ fuzz_target!(|input: FuzzInput| {
             }
 
             let result = MlsValidator::validate_signature(&tampered, &state);
-            assert!(result.is_ok());
+            assert!(matches!(result, ValidationResult::Reject { .. }));
 
-            if let ValidationResult::Accept = result.unwrap() {
+            if let ValidationResult::Accept = result {
                 panic!("SECURITY VIOLATION: Tampered frame accepted! Modified {:?}", field);
             }
         },
@@ -198,9 +198,9 @@ fuzz_target!(|input: FuzzInput| {
             let state = create_group_state(room_id, epoch, vec![sender_id], &verifying_key1);
 
             let result = MlsValidator::validate_signature(&frame, &state);
-            assert!(result.is_ok());
+            assert!(matches!(result, ValidationResult::Reject { .. }));
 
-            if let ValidationResult::Accept = result.unwrap() {
+            if let ValidationResult::Accept = result {
                 panic!("SECURITY VIOLATION: Malformed signature accepted!");
             }
         },

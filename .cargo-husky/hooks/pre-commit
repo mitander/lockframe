@@ -24,13 +24,6 @@ cargo clippy --workspace --all-targets --all-features || {
     exit 1
 }
 
-# Run fast unit tests
-echo "Running unit tests..."
-cargo nextest run --workspace || {
-    echo "FAILURE: Unit tests failed. Fix them before committing."
-    exit 1
-}
-
 # Check fuzz targets compile
 echo "Running fuzz target checks..."
 (cd fuzz && cargo check --all-targets) || {
@@ -45,5 +38,12 @@ cargo doc --workspace --all-features --no-deps || {
     exit 1
 }
 
+# Run fast unit tests
+echo "Running unit tests..."
+cargo nextest run --workspace || {
+    echo "FAILURE: Unit tests failed. Fix them before committing."
+    exit 1
+}
 
 echo "SUCCESS: All pre-commit checks passed!"
+

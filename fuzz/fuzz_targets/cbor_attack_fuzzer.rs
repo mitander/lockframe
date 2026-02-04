@@ -49,7 +49,7 @@ fuzz_target!(|attack: CborAttack| {
 
             for opcode in [Opcode::Hello, Opcode::AppMessage, Opcode::Commit, Opcode::Welcome] {
                 let frame = Frame::new(FrameHeader::new(opcode), cbor_bytes.clone());
-                let _ = Payload::from_frame(frame);
+                let _ = Payload::from_frame(&frame);
             }
         }
 
@@ -70,7 +70,7 @@ fuzz_target!(|attack: CborAttack| {
             for cbor_bytes in attacks {
                 for opcode in [Opcode::Proposal, Opcode::Commit, Opcode::Ban, Opcode::Hello] {
                     let frame = Frame::new(FrameHeader::new(opcode), cbor_bytes.clone());
-                    let _ = Payload::from_frame(frame);
+                    let _ = Payload::from_frame(&frame);
                 }
             }
         }
@@ -95,14 +95,14 @@ fuzz_target!(|attack: CborAttack| {
 
             for opcode in opcodes {
                 let frame = Frame::new(FrameHeader::new(opcode), bytes.clone());
-                let _ = Payload::from_frame(frame);
+                let _ = Payload::from_frame(&frame);
             }
         }
 
         CborAttack::TypeConfusion { opcode, wrong_payload_bytes } => {
             let opcode_enum = Opcode::from_u16(opcode).unwrap_or(Opcode::AppMessage);
             let frame = Frame::new(FrameHeader::new(opcode_enum), wrong_payload_bytes);
-            let _ = Payload::from_frame(frame);
+            let _ = Payload::from_frame(&frame);
         }
 
         CborAttack::DuplicateKeys { count } => {
@@ -116,7 +116,7 @@ fuzz_target!(|attack: CborAttack| {
             }
 
             let frame = Frame::new(FrameHeader::new(Opcode::Hello), cbor_bytes);
-            let _ = Payload::from_frame(frame);
+            let _ = Payload::from_frame(&frame);
         }
     }
 });
