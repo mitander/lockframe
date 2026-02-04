@@ -18,6 +18,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::assertions_on_constants, reason = "sanity check")]
     fn max_epoch_is_reasonable() {
         // Verify MAX_EPOCH is large enough for realistic usage
         const HOURS_PER_YEAR: u64 = 24 * 365;
@@ -25,8 +26,7 @@ mod tests {
 
         assert!(
             MAX_EPOCH >= HOURS_PER_YEAR * MIN_YEARS,
-            "MAX_EPOCH should allow at least {} years at 1 epoch/hour",
-            MIN_YEARS
+            "MAX_EPOCH should allow at least {MIN_YEARS} years at 1 epoch/hour"
         );
     }
 

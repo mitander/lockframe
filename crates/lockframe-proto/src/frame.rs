@@ -76,9 +76,15 @@ impl Frame {
     #[must_use]
     pub fn new(mut header: FrameHeader, payload: impl Into<Bytes>) -> Self {
         let payload = payload.into();
-        header.payload_size = (payload.len() as u32).to_be_bytes();
 
-        debug_assert_eq!(header.payload_size(), payload.len() as u32);
+        #[allow(clippy::expect_used)]
+        let payload_len = u32::try_from(payload.len()).expect(
+            "invariant: payload length fits in u32 (bounded by isize::MAX and protocol limit)",
+        );
+
+        header.payload_size = payload_len.to_be_bytes();
+
+        debug_assert_eq!(header.payload_size(), payload_len);
 
         Self { header, payload }
     }
@@ -172,7 +178,10 @@ impl Frame {
             let _ = total_size; // Proves we hit success path
         }
 
-        let payload = Bytes::copy_from_slice(&bytes[FrameHeader::SIZE..total_size]);
+        #[allow(clippy::expect_used)]
+        let payload = Bytes::copy_from_slice(
+            bytes.get(FrameHeader::SIZE..total_size).expect("invariant: bounds checked above"),
+        );
 
         debug_assert_eq!(payload.len(), payload_size);
 

@@ -26,7 +26,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         ),
     };
 
-    #[allow(clippy::cast_possible_truncation)]
     let room_info = app.active_room_state().map_or_else(String::new, |room| {
         let member_count = room.members.len();
         let msg_count = room.messages.len();

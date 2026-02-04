@@ -5,6 +5,8 @@
 //! [`lockframe_app::Runtime`] orchestration code runs in both production and
 //! simulation.
 
+#![allow(clippy::disallowed_types, reason = "Synchronous locking operations only")]
+
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
@@ -60,6 +62,7 @@ impl SimDriver {
     }
 
     /// Enable invariant checking.
+    #[must_use]
     pub fn with_invariants(mut self, registry: InvariantRegistry) -> Self {
         self.invariants = Some(registry);
         self
@@ -142,27 +145,24 @@ impl Driver for SimDriver {
     }
 
     async fn send_frame(&mut self, frame: Frame) -> Result<(), Self::Error> {
-        let mut state = self.state.lock().unwrap();
-        state.outgoing_frames.push(frame);
+        self.state.lock().unwrap().outgoing_frames.push(frame);
         Ok(())
     }
 
     async fn recv_frame(&mut self) -> Option<Frame> {
-        let mut state = self.state.lock().unwrap();
-        state.incoming_frames.pop_front()
+        self.state.lock().unwrap().incoming_frames.pop_front()
     }
 
     async fn connect(&mut self, _addr: &str) -> Result<(), Self::Error> {
-        let mut state = self.state.lock().unwrap();
-        state.connected = true;
+        self.state.lock().unwrap().connected = true;
         Ok(())
     }
 
     fn is_connected(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        state.connected
+        self.state.lock().unwrap().connected
     }
 
+    #[allow(clippy::disallowed_methods)]
     fn now(&self) -> Self::Instant {
         std::time::Instant::now()
     }

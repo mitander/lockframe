@@ -11,6 +11,7 @@ array-size-threshold = 512000
 # Allow expect/unwrap in test code (#[cfg(test)] modules and #[test] functions)
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
+allow-panic-in-tests = true
 
 disallowed-methods = [
     { path = "std::time::Instant::now", reason = "Determinism violation: Use Environment::now()" },

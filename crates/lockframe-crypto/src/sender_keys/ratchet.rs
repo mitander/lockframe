@@ -187,7 +187,6 @@ impl Drop for SymmetricRatchet {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic, clippy::unwrap_used, clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
 
@@ -320,7 +319,7 @@ mod tests {
                 assert_eq!(current, 6); // We're at 6 after advance_to(5)
                 assert_eq!(requested, 3);
             },
-            _ => panic!("expected RatchetTooFarBehind error"),
+            _ => unreachable!("expected RatchetTooFarBehind error"),
         }
     }
 
@@ -334,7 +333,7 @@ mod tests {
 
         match result {
             Err(SenderKeyError::RatchetTooFarBehind { .. }) => {},
-            _ => panic!("expected RatchetTooFarBehind error"),
+            _ => unreachable!("expected RatchetTooFarBehind error"),
         }
     }
 

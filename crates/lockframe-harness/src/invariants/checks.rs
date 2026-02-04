@@ -5,7 +5,23 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use super::{Invariant, InvariantKind, InvariantResult, SystemSnapshot, Violation};
+use super::{InvariantKind, InvariantResult, SystemSnapshot, Violation};
+use crate::invariants::Invariant;
+
+/// Type alias for room-epoch key
+type RoomEpochKey = (u128, u64);
+
+/// Type alias for client member data
+type ClientMemberData = (u64, BTreeSet<u64>);
+
+/// Type alias for room-epoch members mapping
+type RoomEpochMembers = HashMap<RoomEpochKey, Vec<ClientMemberData>>;
+
+/// Type alias for client hash data
+type ClientHashData = (u64, [u8; 32]);
+
+/// Type alias for room-epoch hashes mapping
+type RoomEpochHashes = HashMap<RoomEpochKey, Vec<ClientHashData>>;
 
 /// Active room must exist in rooms map.
 ///
@@ -82,8 +98,7 @@ impl Invariant for MembershipConsistency {
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
         // Group clients by (room_id, epoch) and compare their member sets
-        let mut room_epoch_members: HashMap<(u128, u64), Vec<(u64, BTreeSet<u64>)>> =
-            HashMap::new();
+        let mut room_epoch_members: RoomEpochMembers = HashMap::new();
 
         for client in &state.clients {
             for (room_id, room) in &client.rooms {
@@ -129,7 +144,7 @@ impl Invariant for TreeHashConvergence {
 
     fn check(&self, state: &SystemSnapshot) -> InvariantResult {
         // Group clients by (room_id, epoch) and compare tree hashes
-        let mut room_epoch_hashes: HashMap<(u128, u64), Vec<(u64, [u8; 32])>> = HashMap::new();
+        let mut room_epoch_hashes: RoomEpochHashes = HashMap::new();
 
         for client in &state.clients {
             for (room_id, room) in &client.rooms {

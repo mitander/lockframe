@@ -134,7 +134,7 @@ impl SmallMessage {
         };
 
         // Deterministic content from seed
-        (0..len).map(|i| self.seed.wrapping_add(i as u8)).collect()
+        (0u32..len).map(|i| self.seed.wrapping_add(i as u8)).collect()
     }
 }
 
@@ -226,7 +226,7 @@ impl OperationError {
 impl OperationResult {
     /// Check if operation succeeded.
     pub fn is_ok(&self) -> bool {
-        matches!(self, OperationResult::Ok)
+        matches!(self, Self::Ok)
     }
 
     /// Check if operation failed.
@@ -237,8 +237,8 @@ impl OperationResult {
     /// Get error properties if this is an error.
     pub fn error_properties(&self) -> Option<ErrorProperties> {
         match self {
-            OperationResult::Ok => None,
-            OperationResult::Error(e) => Some(e.properties()),
+            Self::Ok => None,
+            Self::Error(e) => Some(e.properties()),
         }
     }
 }

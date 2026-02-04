@@ -127,10 +127,7 @@ impl RealWorld {
                     continue;
                 }
 
-                let client = match self.clients.get_mut(recipient_id as usize) {
-                    Some(c) => c,
-                    None => continue,
-                };
+                let Some(client) = self.clients.get_mut(recipient_id as usize) else { continue };
 
                 let result = client.handle(ClientEvent::FrameReceived(pf.frame.clone()));
                 if let Ok(actions) = result {
@@ -241,9 +238,8 @@ impl RealWorld {
             return OperationResult::Error(OperationError::AlreadyMember);
         }
 
-        let key_package = match self.key_packages.get_mut(&invitee_id) {
-            Some(packages) if !packages.is_empty() => packages.pop().unwrap(),
-            _ => return OperationResult::Error(OperationError::NotMember), // No key packages
+        let Some(key_package) = self.key_packages.get_mut(&invitee_id).and_then(Vec::pop) else {
+            return OperationResult::Error(OperationError::NotMember);
         };
 
         let real_room_id = u128::from(room_id) + 1;
@@ -254,9 +250,8 @@ impl RealWorld {
             key_packages: vec![key_package],
         });
 
-        let actions = match add_result {
-            Ok(actions) => actions,
-            Err(_) => return OperationResult::Error(OperationError::NotMember),
+        let Ok(actions) = add_result else {
+            return OperationResult::Error(OperationError::NotMember);
         };
 
         let welcome_frame = actions.iter().find_map(|action| {
@@ -352,15 +347,13 @@ impl RealWorld {
         let payload =
             GroupInfoPayload { room_id: real_room_id, epoch: current_epoch, group_info_bytes };
 
-        let frame =
-            match Payload::GroupInfo(payload).into_frame(FrameHeader::new(Opcode::GroupInfo)) {
-                Ok(f) => f,
-                Err(_) => return OperationResult::Error(OperationError::NoGroupInfo),
-            };
+        let Ok(frame) = Payload::GroupInfo(payload).into_frame(FrameHeader::new(Opcode::GroupInfo))
+        else {
+            return OperationResult::Error(OperationError::NoGroupInfo);
+        };
 
-        let join_actions = match joiner.handle(ClientEvent::FrameReceived(frame)) {
-            Ok(actions) => actions,
-            Err(_) => return OperationResult::Error(OperationError::NoGroupInfo),
+        let Ok(join_actions) = joiner.handle(ClientEvent::FrameReceived(frame)) else {
+            return OperationResult::Error(OperationError::NoGroupInfo);
         };
 
         let commit = join_actions.iter().find_map(|a| {
@@ -393,7 +386,7 @@ impl RealWorld {
         for action in &join_actions {
             if let ClientAction::Send(frame) = action
                 && frame.header.opcode_enum() == Some(Opcode::GroupInfo)
-                && let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame.clone())
+                && let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame)
             {
                 self.group_info.insert(room_id, gi.group_info_bytes);
             }
@@ -452,9 +445,8 @@ impl RealWorld {
             member_ids: vec![target_member_id],
         });
 
-        let actions = match remove_result {
-            Ok(actions) => actions,
-            Err(_) => return OperationResult::Error(OperationError::NotMember),
+        let Ok(actions) = remove_result else {
+            return OperationResult::Error(OperationError::NotMember);
         };
 
         // Deliver commits immediately so members can process the epoch transition
@@ -528,7 +520,7 @@ impl RealWorld {
                 for action in &actions {
                     if let ClientAction::Send(frame) = action
                         && frame.header.opcode_enum() == Some(Opcode::GroupInfo)
-                        && let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame.clone())
+                        && let Ok(Payload::GroupInfo(gi)) = Payload::from_frame(frame)
                     {
                         self.group_info.entry(room_id).or_insert(gi.group_info_bytes);
                     }
@@ -546,9 +538,8 @@ impl RealWorld {
         room_id: ModelRoomId,
         content: &SmallMessage,
     ) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if self.partitioned.get(&client_id).copied().unwrap_or(false) {
@@ -578,12 +569,13 @@ impl RealWorld {
                             .map(|(&(cid, _), _)| cid)
                             .collect();
 
-                        let log_index_val = *self.next_log_index.entry(room_id).or_insert(0);
+                        let log_index_ref = self.next_log_index.entry(room_id).or_insert(0);
+                        let log_index_val = *log_index_ref;
+                        *log_index_ref += 1;
+
                         let mut sequenced_frame = frame;
                         sequenced_frame.header.set_log_index(log_index_val);
-                        *self.next_log_index.get_mut(&room_id).unwrap() += 1;
 
-                        // Store directly, we can't decrypt own message due to ratchet advance
                         let sender_epoch =
                             self.room_epochs.get(&(client_id, room_id)).copied().unwrap_or(0);
 
@@ -611,9 +603,8 @@ impl RealWorld {
     }
 
     fn apply_leave_room(&mut self, client_id: ClientId, room_id: ModelRoomId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if !self.room_membership.get(&(client_id, room_id)).copied().unwrap_or(false) {
@@ -762,7 +753,7 @@ fn operation_strategy(num_clients: usize) -> impl Strategy<Value = Operation> {
         1 => Just(Operation::DeliverPending),
         1 => client_id.clone().prop_map(|c| Operation::Partition { client_id: c }),
         1 => client_id.clone().prop_map(|c| Operation::HealPartition { client_id: c }),
-        1 => client_id.clone().prop_map(|c| Operation::Disconnect { client_id: c }),
+        1 => client_id.prop_map(|c| Operation::Disconnect { client_id: c }),
     ]
 }
 

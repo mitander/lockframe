@@ -5,6 +5,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    slice,
     time::Duration,
 };
 
@@ -40,7 +41,7 @@ const SENDER_KEY_SECRET_SIZE: usize = 32;
 /// Timeout for pending commits before requesting sync (30 seconds).
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Timeout for pending `KeyPackage` fetch operations (60 seconds).
+/// Timeout for pending `KeyPackage` fetch operations (1 minute).
 const KEY_PACKAGE_FETCH_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// Client identity.
@@ -151,7 +152,7 @@ impl<E: Environment> Client<E> {
         self.rooms
             .get(&room_id)
             .and_then(|r| r.mls_group.export_group_state().ok())
-            .map(|state| state.members.clone())
+            .map(|state| state.members)
     }
 
     /// Generate a `KeyPackage` for this client to join a room.
@@ -181,15 +182,15 @@ impl<E: Environment> Client<E> {
             ClientEvent::SendMessage { room_id, plaintext } => {
                 self.handle_send_message(room_id, &plaintext)
             },
-            ClientEvent::FrameReceived(frame) => self.handle_frame(frame),
+            ClientEvent::FrameReceived(frame) => self.handle_frame(&frame),
             ClientEvent::Tick { now } => self.handle_tick(now),
             ClientEvent::LeaveRoom { room_id } => self.handle_leave_room(room_id),
             ClientEvent::JoinRoom { room_id, welcome } => self.handle_join_room(room_id, &welcome),
             ClientEvent::AddMembers { room_id, key_packages } => {
-                self.handle_add_members(room_id, key_packages)
+                self.handle_add_members(room_id, &key_packages)
             },
             ClientEvent::RemoveMembers { room_id, member_ids } => {
-                self.handle_remove_members(room_id, member_ids)
+                self.handle_remove_members(room_id, &member_ids)
             },
             ClientEvent::PublishKeyPackage => self.handle_publish_key_package(),
             ClientEvent::FetchAndAddMember { room_id, user_id } => {
@@ -280,10 +281,10 @@ impl<E: Environment> Client<E> {
         Ok(vec![ClientAction::Send(frame)])
     }
 
-    fn handle_frame(&mut self, frame: Frame) -> Result<Vec<ClientAction>, ClientError> {
+    fn handle_frame(&mut self, frame: &Frame) -> Result<Vec<ClientAction>, ClientError> {
         let room_id = frame.header.room_id();
 
-        let opcode = frame.header.opcode_enum().ok_or(ClientError::InvalidFrame {
+        let opcode = frame.header.opcode_enum().ok_or_else(|| ClientError::InvalidFrame {
             reason: format!("Unknown opcode: {}", frame.header.opcode()),
         })?;
 
@@ -307,7 +308,7 @@ impl<E: Environment> Client<E> {
 
                 let mls_actions = room
                     .mls_group
-                    .process_message(frame.clone())
+                    .process_message(frame)
                     .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
                 Ok(self.convert_mls_actions(room_id, mls_actions))
@@ -319,7 +320,7 @@ impl<E: Environment> Client<E> {
     fn handle_app_message(
         &mut self,
         room_id: RoomId,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
         if frame.header.sender_id() == self.identity.sender_id {
             // Skip our own messages - we already have the plaintext locally
@@ -349,7 +350,7 @@ impl<E: Environment> Client<E> {
 
         let validation_state = room.mls_group.export_validation_state();
         room.mls_group
-            .validate_frame(&frame, Some(&validation_state))
+            .validate_frame(frame, Some(&validation_state))
             .map_err(|e| ClientError::InvalidFrame { reason: e.to_string() })?;
 
         let proto_encrypted = deserialize_encrypted_message(&frame.payload)
@@ -394,17 +395,15 @@ impl<E: Environment> Client<E> {
     fn handle_commit(
         &mut self,
         room_id: RoomId,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
-        if !self.rooms.contains_key(&room_id) {
-            return Err(ClientError::RoomNotFound { room_id });
-        }
-
         let is_own_commit = frame.header.sender_id() == self.identity.sender_id;
 
-        let mut actions = {
-            let room = self.rooms.get_mut(&room_id).expect("checked above");
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return Err(ClientError::RoomNotFound { room_id });
+        };
 
+        let mut actions = {
             if is_own_commit && room.mls_group.has_pending_commit() {
                 let mls_actions = room
                     .mls_group
@@ -425,7 +424,7 @@ impl<E: Environment> Client<E> {
                 // before the original send operation consumed the pending commit.
                 let mls_actions = room
                     .mls_group
-                    .process_message(frame.clone())
+                    .process_message(frame)
                     .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
                 self.convert_mls_actions(room_id, mls_actions)
@@ -514,7 +513,7 @@ impl<E: Environment> Client<E> {
     fn handle_welcome(
         &mut self,
         room_id: RoomId,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
         if self.rooms.contains_key(&room_id) {
             return Err(ClientError::RoomAlreadyExists { room_id });
@@ -602,7 +601,7 @@ impl<E: Environment> Client<E> {
     fn handle_sync_response(
         &mut self,
         room_id: RoomId,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
         let sync_response: SyncResponse =
             ciborium::de::from_reader(&frame.payload[..]).map_err(|e| {
@@ -625,7 +624,7 @@ impl<E: Environment> Client<E> {
                 reason: format!("Failed to decode sync frame {i}: {e}"),
             })?;
 
-            match self.handle_frame(sync_frame) {
+            match self.handle_frame(&sync_frame) {
                 Ok(actions) => all_actions.extend(actions),
                 Err(e) => {
                     // Log error but continue processing remaining frames
@@ -672,12 +671,12 @@ impl<E: Environment> Client<E> {
     fn handle_add_members(
         &mut self,
         room_id: RoomId,
-        key_packages_bytes: Vec<Vec<u8>>,
+        key_packages_bytes: &[Vec<u8>],
     ) -> Result<Vec<ClientAction>, ClientError> {
         let room = self.rooms.get_mut(&room_id).ok_or(ClientError::RoomNotFound { room_id })?;
         let mls_actions = room
             .mls_group
-            .add_members_from_bytes(&key_packages_bytes)
+            .add_members_from_bytes(key_packages_bytes)
             .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
         Ok(self.convert_mls_actions(room_id, mls_actions))
@@ -686,12 +685,12 @@ impl<E: Environment> Client<E> {
     fn handle_remove_members(
         &mut self,
         room_id: RoomId,
-        member_ids: Vec<u64>,
+        member_ids: &[u64],
     ) -> Result<Vec<ClientAction>, ClientError> {
         let room = self.rooms.get_mut(&room_id).ok_or(ClientError::RoomNotFound { room_id })?;
         let mls_actions = room
             .mls_group
-            .remove_members(&member_ids)
+            .remove_members(member_ids)
             .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
         Ok(self.convert_mls_actions(room_id, mls_actions))
@@ -748,7 +747,7 @@ impl<E: Environment> Client<E> {
     /// Completes a pending add operation by using the fetched `KeyPackage`.
     fn handle_key_package_fetch_response(
         &mut self,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
         let payload: KeyPackageFetchPayload = ciborium::de::from_reader(&frame.payload[..])
             .map_err(|e| ClientError::InvalidFrame {
@@ -786,21 +785,19 @@ impl<E: Environment> Client<E> {
         }
 
         let mut actions = Vec::new();
-        let key_package_bytes = payload.key_package_bytes.clone();
+        let key_package_bytes = payload.key_package_bytes;
 
         for (room_id, user_id) in matching_entries {
             self.pending_adds.remove(&(room_id, user_id));
 
-            let room = if let Some(room) = self.rooms.get_mut(&room_id) {
-                room
-            } else {
+            let Some(room) = self.rooms.get_mut(&room_id) else {
                 actions.push(ClientAction::Log {
                     message: format!("Room {room_id:x} not found for pending add, skipping"),
                 });
                 continue;
             };
 
-            match room.mls_group.add_members_from_bytes(&[key_package_bytes.clone()]) {
+            match room.mls_group.add_members_from_bytes(slice::from_ref(&key_package_bytes)) {
                 Ok(mls_actions) => {
                     let mut room_actions = self.convert_mls_actions(room_id, mls_actions);
                     room_actions.push(ClientAction::MemberAdded { room_id, user_id });
@@ -849,7 +846,7 @@ impl<E: Environment> Client<E> {
     /// Completes a pending external join by creating an external commit.
     fn handle_group_info_response(
         &mut self,
-        frame: Frame,
+        frame: &Frame,
     ) -> Result<Vec<ClientAction>, ClientError> {
         let payload: GroupInfoPayload =
             ciborium::de::from_reader(&frame.payload[..]).map_err(|e| {
@@ -930,7 +927,9 @@ impl<E: Environment> Client<E> {
         for (&room_id, room) in &mut self.rooms {
             if room.mls_group.is_commit_timeout(now, COMMIT_TIMEOUT) {
                 let current_epoch = room.mls_group.epoch();
-                room.mls_group.clear_pending_commit();
+                room.mls_group
+                    .clear_pending_commit()
+                    .map_err(|e| ClientError::Mls { reason: e.to_string() })?;
 
                 // Sync MLS group to prevent hanging states
                 actions.push(ClientAction::RequestSync {
@@ -965,24 +964,22 @@ impl<E: Environment> Client<E> {
     ) -> Vec<ClientAction> {
         mls_actions
             .into_iter()
-            .filter_map(|action| match action {
+            .map(|action| match action {
                 MlsAction::SendCommit(frame)
                 | MlsAction::SendProposal(frame)
-                | MlsAction::SendMessage(frame) => Some(ClientAction::Send(frame)),
-                MlsAction::SendWelcome { frame, .. } => Some(ClientAction::Send(frame)),
+                | MlsAction::SendMessage(frame)
+                | MlsAction::SendWelcome { frame, .. } => ClientAction::Send(frame),
                 MlsAction::DeliverMessage { sender, plaintext } => {
                     // MLS-decrypted message don't use sender keys path
-                    Some(ClientAction::DeliverMessage {
+                    ClientAction::DeliverMessage {
                         room_id,
                         sender_id: sender,
                         plaintext,
                         log_index: 0,
                         timestamp: 0,
-                    })
+                    }
                 },
-                MlsAction::RemoveGroup { reason } => {
-                    Some(ClientAction::RoomRemoved { room_id, reason })
-                },
+                MlsAction::RemoveGroup { reason } => ClientAction::RoomRemoved { room_id, reason },
                 MlsAction::PublishGroupInfo { room_id: info_room_id, epoch, group_info_bytes } => {
                     let payload =
                         GroupInfoPayload { room_id: info_room_id, epoch, group_info_bytes };
@@ -990,13 +987,13 @@ impl<E: Environment> Client<E> {
                     match Payload::GroupInfo(payload)
                         .into_frame(FrameHeader::new(Opcode::GroupInfo))
                     {
-                        Ok(frame) => Some(ClientAction::Send(frame)),
-                        Err(e) => Some(ClientAction::Log {
+                        Ok(frame) => ClientAction::Send(frame),
+                        Err(e) => ClientAction::Log {
                             message: format!("Failed to create GroupInfo frame: {e:?}"),
-                        }),
+                        },
                     }
                 },
-                MlsAction::Log { message } => Some(ClientAction::Log { message }),
+                MlsAction::Log { message } => ClientAction::Log { message },
             })
             .collect()
     }
@@ -1025,8 +1022,9 @@ fn proto_to_crypto_encrypted(proto: &EncryptedMessage) -> CryptoEncryptedMessage
 
 fn serialize_encrypted_message(encrypted: &EncryptedMessage) -> Vec<u8> {
     let mut data = Vec::new();
+    #[allow(clippy::expect_used)]
     ciborium::ser::into_writer(encrypted, &mut data)
-        .expect("CBOR serialization of EncryptedMessage should not fail");
+        .expect("invariant: CBOR serialization to Vec cannot fail (no I/O errors)");
     data
 }
 
@@ -1035,7 +1033,6 @@ fn deserialize_encrypted_message(data: &[u8]) -> Result<EncryptedMessage, String
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::time::Duration;
 
@@ -1142,7 +1139,9 @@ mod tests {
                 assert!(!frame.payload.is_empty());
                 assert_ne!(frame.payload.as_ref(), b"Hello, World!");
             },
-            _ => panic!("Expected Send action"),
+            _ => {
+                panic!("Expected Send action")
+            },
         }
     }
 
@@ -1192,10 +1191,10 @@ mod tests {
             .handle(ClientEvent::SendMessage { room_id, plaintext: plaintext.to_vec() })
             .unwrap();
 
-        let frame = match &actions[0] {
-            ClientAction::Send(f) => f.clone(),
-            _ => panic!("Expected Send action"),
+        let ClientAction::Send(frame) = &actions[0] else {
+            panic!("Expected Send action");
         };
+        let frame = frame.clone();
 
         // Verify the encrypted payload can be deserialized
         let encrypted = deserialize_encrypted_message(&frame.payload).unwrap();

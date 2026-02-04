@@ -38,7 +38,7 @@ pub enum TlsMode {
 /// Use [`TransportConfig::default`] for standard settings:
 /// - Secure TLS
 /// - `server_name = "localhost"`
-/// - `connect_timeout` = 5s`
+/// - `connect_timeout = 5s`
 ///
 /// Convenience constructors are provided for common environments.
 #[derive(Debug, Clone)]
@@ -143,9 +143,12 @@ pub async fn connect_with_config(
         TlsMode::Secure => secure_client_config()?,
         TlsMode::Insecure => insecure_client_config(),
     };
-    let mut endpoint =
-        Endpoint::client("0.0.0.0:0".parse().expect("invariant: literal socket address is valid"))
-            .map_err(|e| TransportError::Connection(format!("endpoint creation failed: {e}")))?;
+
+    #[allow(clippy::expect_used)]
+    let mut endpoint = Endpoint::client(
+        "0.0.0.0:0".parse().expect("invariant: literal socket address '0.0.0.0:0' is valid"),
+    )
+    .map_err(|e| TransportError::Connection(format!("endpoint creation failed: {e}")))?;
     endpoint.set_default_client_config(client_config);
 
     let connecting = endpoint
@@ -276,7 +279,7 @@ async fn write_frame(send: &mut SendStream, frame: &Frame) -> Result<(), Transpo
 /// Create a secure client config that verifies certificates against system
 /// roots.
 fn secure_client_config() -> Result<ClientConfig, TransportError> {
-    let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let roots = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect::<rustls::RootCertStore>();
 
     let mut crypto =
         rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
@@ -289,6 +292,7 @@ fn secure_client_config() -> Result<ClientConfig, TransportError> {
     ));
 
     let mut transport = quinn::TransportConfig::default();
+    #[allow(clippy::expect_used)]
     transport.max_idle_timeout(Some(
         TRANSPORT_IDLE_TIMEOUT
             .try_into()
@@ -310,12 +314,14 @@ fn insecure_client_config() -> ClientConfig {
 
     crypto.alpn_protocols = vec![ALPN_PROTOCOL.to_vec()];
 
+    #[allow(clippy::expect_used)]
     let mut config = ClientConfig::new(Arc::new(
         quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-            .expect("rustls config should be valid"),
+            .expect("invariant: rustls ClientConfig is valid for QUIC"),
     ));
 
     let mut transport = quinn::TransportConfig::default();
+    #[allow(clippy::expect_used)]
     transport.max_idle_timeout(Some(
         TRANSPORT_IDLE_TIMEOUT
             .try_into()

@@ -155,7 +155,6 @@ impl FrameHeader {
 
     /// Serialize header to bytes (zero-copy)
     #[must_use]
-    #[allow(clippy::wrong_self_convention)] // Common serialization pattern
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let bytes = IntoBytes::as_bytes(self);
         let mut arr = [0u8; Self::SIZE];

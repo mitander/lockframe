@@ -48,6 +48,7 @@ impl SystemEnv {
 impl Environment for SystemEnv {
     type Instant = std::time::Instant;
 
+    #[allow(clippy::disallowed_methods)]
     fn now(&self) -> Self::Instant {
         std::time::Instant::now()
     }
@@ -56,15 +57,18 @@ impl Environment for SystemEnv {
         tokio::time::sleep(duration)
     }
 
+    #[allow(clippy::expect_used)]
     fn random_bytes(&self, buffer: &mut [u8]) {
         getrandom::fill(buffer)
-            .expect("OS RNG failure is unrecoverable - server cannot operate securely");
+            .expect("invariant: OS RNG failure is unrecoverable - server cannot operate securely");
     }
 
+    #[allow(clippy::disallowed_methods)]
+    #[allow(clippy::expect_used)]
     fn wall_clock_secs(&self) -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("System clock is before Unix epoch")
+            .expect("invariant: system clock is after Unix epoch (1970-01-01)")
             .as_secs()
     }
 }
@@ -74,6 +78,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::disallowed_methods)]
     fn system_env_time_advances() {
         let env = SystemEnv::new();
 

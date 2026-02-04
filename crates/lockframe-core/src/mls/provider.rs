@@ -1,7 +1,7 @@
-//! OpenMLS provider integration with Lockframe's Environment abstraction.
+//! `OpenMLS` provider integration with Lockframe's Environment abstraction.
 //!
-//! Bridges OpenMLS's provider pattern with our deterministic Environment trait,
-//! enabling deterministic testing with Turmoil.
+//! Bridges `OpenMLS`'s provider pattern with our deterministic Environment
+//! trait, enabling deterministic testing with Turmoil.
 
 use openmls_memory_storage::MemoryStorage;
 use openmls_rust_crypto::RustCrypto;
@@ -9,9 +9,9 @@ use openmls_traits::{OpenMlsProvider, random::OpenMlsRand};
 
 use crate::env::Environment;
 
-/// Lockframe's OpenMLS provider that uses our Environment trait for RNG.
+/// Lockframe's `OpenMLS` provider that uses our Environment trait for RNG.
 pub struct MlsProvider<E: Environment> {
-    /// OpenMLS crypto provider (sync crypto operations)
+    /// `OpenMLS` crypto provider (sync crypto operations)
     crypto: RustCrypto,
 
     /// RNG adapter wrapping our environment
@@ -43,7 +43,7 @@ impl<E: Environment> MlsProvider<E> {
 
 /// RNG adapter that delegates to our Environment trait.
 ///
-/// This allows OpenMLS to use our deterministic RNG in simulation or
+/// This allows `OpenMLS` to use our deterministic RNG in simulation or
 /// crypto-secure RNG in production.
 pub struct EnvironmentRng<E: Environment> {
     env: E,
@@ -72,7 +72,7 @@ impl<E: Environment> rand::RngCore for EnvironmentRng<E> {
 
 impl<E: Environment> rand::CryptoRng for EnvironmentRng<E> {}
 
-/// Implement OpenMLS's RNG trait using our Environment abstraction.
+/// Implement `OpenMLS`'s RNG trait using our Environment abstraction.
 impl<E: Environment> OpenMlsRand for EnvironmentRng<E> {
     type Error = std::convert::Infallible;
 

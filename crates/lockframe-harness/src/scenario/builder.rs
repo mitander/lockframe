@@ -28,6 +28,7 @@ pub struct Scenario {
 
 impl Scenario {
     /// Create a new scenario with default configuration.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             client_config: ConnectionConfig::default(),
@@ -37,12 +38,14 @@ impl Scenario {
     }
 
     /// Configure the client connection.
+    #[must_use]
     pub fn with_client_config(mut self, config: ConnectionConfig) -> Self {
         self.client_config = config;
         self
     }
 
     /// Configure the server connection.
+    #[must_use]
     pub fn with_server_config(mut self, config: ConnectionConfig) -> Self {
         self.server_config = config;
         self
@@ -56,6 +59,7 @@ impl Scenario {
     /// 3. Call `tick()` on both connections
     /// 4. Process any resulting actions (Close, `SendFrame`, etc.)
     /// 5. Run the oracle
+    #[must_use]
     pub fn with_time_advance(mut self, duration: Duration) -> Self {
         self.time_advance = Some(duration);
         self
@@ -110,7 +114,7 @@ impl RunnableScenario {
 
         if let Some(advance) = self.scenario.time_advance {
             let future = now + advance;
-            self.tick_connections(&mut world, future)?;
+            self.tick_connections(&mut world, future);
         }
 
         (self.oracle)(&world)?;
@@ -170,23 +174,21 @@ impl RunnableScenario {
     }
 
     /// Tick both connections at the given time and process resulting actions.
-    fn tick_connections(&self, world: &mut World<Instant>, now: Instant) -> Result<(), String> {
+    fn tick_connections(&self, world: &mut World<Instant>, now: Instant) {
         let client_actions = world.client_mut().tick(now);
-        self.process_actions(world, Actor::Client, client_actions)?;
+        self.process_actions(world, &Actor::Client, client_actions);
 
         let server_actions = world.server_mut().tick(now);
-        self.process_actions(world, Actor::Server, server_actions)?;
-
-        Ok(())
+        self.process_actions(world, &Actor::Server, server_actions);
     }
 
     /// Process actions returned by `tick()` or other connection methods.
     fn process_actions(
         &self,
         world: &mut World<Instant>,
-        actor: Actor,
+        actor: &Actor,
         actions: Vec<ConnectionAction>,
-    ) -> Result<(), String> {
+    ) {
         for action in actions {
             match action {
                 ConnectionAction::Close { .. } => {
@@ -202,7 +204,6 @@ impl RunnableScenario {
                 },
             }
         }
-        Ok(())
     }
 }
 

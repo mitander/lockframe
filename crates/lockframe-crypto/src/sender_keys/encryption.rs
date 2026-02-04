@@ -132,19 +132,10 @@ fn build_nonce(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::indexing_slicing,
-    clippy::panic,
-    clippy::unwrap_used,
-    clippy::cast_possible_truncation,
-    clippy::arithmetic_side_effects,
-    clippy::unreadable_literal
-)]
 mod tests {
     use super::{super::ratchet::SymmetricRatchet, *};
 
     fn test_message_key(target_gen: u32) -> MessageKey {
-        // Create a predictable key for testing
         let mut key = [0u8; 32];
         for (i, byte) in key.iter_mut().enumerate() {
             *byte = (i + target_gen as usize) as u8;
@@ -152,7 +143,6 @@ mod tests {
 
         let mut ratchet = SymmetricRatchet::new(&key);
 
-        // Advance to desired generation
         let mut msg_key = ratchet.advance().unwrap();
         for _ in 1..=target_gen {
             msg_key = ratchet.advance().unwrap();
@@ -251,12 +241,11 @@ mod tests {
         let result = decrypt_message(&encrypted, &wrong_key);
         assert!(result.is_err());
 
-        match result {
-            Err(SenderKeyError::DecryptionFailed { reason }) => {
-                assert!(reason.contains("authentication"));
-            },
-            _ => panic!("expected DecryptionFailed error"),
-        }
+        assert!(matches!(
+            result,
+            Err(SenderKeyError::DecryptionFailed { reason })
+                if reason.contains("authentication")
+        ));
     }
 
     #[test]
@@ -279,7 +268,7 @@ mod tests {
     #[test]
     fn nonce_structure() {
         let random_suffix = [0xAB; NONCE_RANDOM_SIZE];
-        let nonce = build_nonce(0x0102030405060708, 0x09_0A_0B_0C, 0x0D_0E_0F_10, random_suffix);
+        let nonce = build_nonce(0x0102_0304_0506_0708, 0x09_0A_0B_0C, 0x0D_0E_0F_10, random_suffix);
 
         // Check epoch (bytes 0-7)
         assert_eq!(&nonce[0..8], &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);

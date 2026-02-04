@@ -144,6 +144,7 @@ impl Driver for TerminalDriver {
         self.connection.is_some()
     }
 
+    #[allow(clippy::disallowed_methods)]
     fn now(&self) -> Self::Instant {
         Instant::now()
     }

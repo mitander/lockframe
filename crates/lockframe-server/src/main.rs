@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         driver: DriverConfig { max_connections: args.max_connections, ..Default::default() },
     };
 
-    let server = Server::bind(config).await?;
+    let server = Server::bind(config)?;
 
     tracing::info!("Server listening on {}", server.local_addr()?);
 

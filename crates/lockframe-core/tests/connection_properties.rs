@@ -408,8 +408,8 @@ fn prop_session_id_deterministic_with_same_env() {
         // Verify the HelloReply frames contain the same session ID
         match (&actions1[0], &actions2[0]) {
             (ConnectionAction::SendFrame(frame1), ConnectionAction::SendFrame(frame2)) => {
-                let payload1 = Payload::from_frame(frame1.clone()).unwrap();
-                let payload2 = Payload::from_frame(frame2.clone()).unwrap();
+                let payload1 = Payload::from_frame(frame1).unwrap();
+                let payload2 = Payload::from_frame(frame2).unwrap();
 
                 match (payload1, payload2) {
                     (Payload::HelloReply(reply1), Payload::HelloReply(reply2)) => {

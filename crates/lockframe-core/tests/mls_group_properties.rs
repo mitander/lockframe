@@ -32,7 +32,7 @@ fn add_members_sets_pending_commit() {
 
     // Generate a key package for the new member
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id)
+        MlsGroup::generate_key_package(env, new_member_id)
             .expect("key package generation should succeed");
 
     // Add the new member
@@ -62,8 +62,7 @@ fn remove_members_sets_pending_commit() {
     // Create group and add a member first
     let (mut group, _) = MlsGroup::new(env.clone(), room_id, creator_id).unwrap();
 
-    let (kp_bytes, _, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), member_to_add).unwrap();
+    let (kp_bytes, _, _pending_state) = MlsGroup::generate_key_package(env, member_to_add).unwrap();
 
     group.add_members_from_bytes(&[kp_bytes]).unwrap();
     group.merge_pending_commit().unwrap();
@@ -104,7 +103,7 @@ fn merge_commit_advances_epoch_by_one() {
 
     // Generate key package and add member
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id)
+        MlsGroup::generate_key_package(env, new_member_id)
             .expect("key package generation should succeed");
 
     group.add_members_from_bytes(&[key_package_bytes]).expect("add_members should succeed");
@@ -136,7 +135,7 @@ fn pending_commit_cleared_after_merge() {
     let (mut group, _) = MlsGroup::new(env.clone(), room_id, creator_id).unwrap();
 
     let (key_package_bytes, _hash, _pending_state) =
-        MlsGroup::generate_key_package(env.clone(), new_member_id).unwrap();
+        MlsGroup::generate_key_package(env, new_member_id).unwrap();
 
     group.add_members_from_bytes(&[key_package_bytes]).unwrap();
 

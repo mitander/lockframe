@@ -31,7 +31,7 @@ pub struct MlsGroupState {
     /// Tree hash of the current ratchet tree
     ///
     /// Used for consistency checks (all clients should converge to same
-    /// tree_hash)
+    /// `tree_hash`)
     pub tree_hash: [u8; 32],
 
     /// List of member IDs currently in the group
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_serialize_deserialize() {
         let original =
-            MlsGroupState::new(0x12345678_90abcdef_12345678_90abcdef, 42, [0xffu8; 32], vec![
+            MlsGroupState::new(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef, 42, [0xffu8; 32], vec![
                 100, 200, 300, 400,
             ]);
 

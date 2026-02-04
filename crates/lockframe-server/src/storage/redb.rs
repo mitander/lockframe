@@ -69,10 +69,7 @@ impl RedbStorage {
         table: &T,
         room_id: u128,
     ) -> Result<u64, StorageError> {
-        match self.compute_latest_log_index(table, room_id)? {
-            Some(latest) => Ok(latest + 1),
-            None => Ok(0),
-        }
+        (self.compute_latest_log_index(table, room_id)?).map_or(Ok(0), |latest| Ok(latest + 1))
     }
 
     /// Find the latest `log_index` for a room by scanning keys.
@@ -256,13 +253,14 @@ impl Storage for RedbStorage {
         match table.get(key.as_slice()).map_err(|e| StorageError::Io(e.to_string()))? {
             Some(value) => {
                 let bytes = value.value();
-                if bytes.len() < 8 {
-                    return Err(StorageError::Serialization(
-                        "group_info value too short".to_string(),
-                    ));
-                }
+                let epoch_bytes = bytes.get(..8).ok_or_else(|| {
+                    StorageError::Serialization("group_info value too short".to_string())
+                })?;
 
-                let epoch = u64::from_be_bytes(bytes[..8].try_into().expect("length checked"));
+                #[allow(clippy::expect_used)]
+                let epoch = u64::from_be_bytes(
+                    epoch_bytes.try_into().expect("invariant: epoch_bytes is exactly 8 bytes"),
+                );
                 let group_info = bytes[8..].to_vec();
 
                 Ok(Some((epoch, group_info)))
@@ -280,6 +278,7 @@ impl Storage for RedbStorage {
 
         for result in table.iter().map_err(|e| StorageError::Io(e.to_string()))? {
             let (key, _) = result.map_err(|e| StorageError::Io(e.to_string()))?;
+            #[allow(clippy::expect_used)]
             let room_id = u128::from_be_bytes(key.value().try_into().expect("key is 16 bytes"));
             rooms.push(room_id);
         }
@@ -350,10 +349,13 @@ fn encode_frame_key(room_id: u128, log_index: u64) -> [u8; 24] {
 }
 
 /// Decode frame key back to (`room_id`, `log_index`).
+#[allow(clippy::expect_used)]
 fn decode_frame_key(key: &[u8]) -> (u128, u64) {
     debug_assert_eq!(key.len(), 24);
-    let room_id = u128::from_be_bytes(key[..16].try_into().expect("key length verified"));
-    let log_index = u64::from_be_bytes(key[16..].try_into().expect("key length verified"));
+    let room_id =
+        u128::from_be_bytes(key[..16].try_into().expect("bounds checked by assert above"));
+    let log_index =
+        u64::from_be_bytes(key[16..].try_into().expect("bounds checked by assert above"));
     (room_id, log_index)
 }
 
@@ -372,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_frame_key_encoding() {
-        let room_id: u128 = 0x123456789ABCDEF0_FEDCBA9876543210;
+        let room_id: u128 = 0x1234_5678_9ABC_DEF0_FEDC_BA98_7654_3210;
         let log_index: u64 = 42;
 
         let key = encode_frame_key(room_id, log_index);
@@ -385,12 +387,12 @@ mod tests {
 
     #[test]
     fn test_room_key_encoding() {
-        let room_id: u128 = 0x123456789ABCDEF0_FEDCBA9876543210;
+        let room_id: u128 = 0x1234_5678_9ABC_DEF0_FEDC_BA98_7654_3210;
 
         let key = encode_room_key(room_id);
         assert_eq!(key.len(), 16);
 
-        let decoded = u128::from_be_bytes(key.try_into().expect("key length verified"));
+        let decoded = u128::from_be_bytes(key);
         assert_eq!(decoded, room_id);
     }
 
@@ -437,7 +439,9 @@ mod tests {
 
         match result {
             Err(StorageError::Conflict { expected: 1, got: 2 }) => {},
-            other => panic!("Expected Conflict error, got: {other:?}"),
+            other => {
+                panic!("Expected Conflict error, got: {other:?}");
+            },
         }
     }
 

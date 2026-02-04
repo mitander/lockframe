@@ -38,7 +38,7 @@ impl ClientActor {
 
         match &actions[0] {
             ConnectionAction::SendFrame(frame) => Ok(frame.clone()),
-            _ => Err("Expected SendFrame action from send_hello".to_string()),
+            ConnectionAction::Close { reason } => Err(reason.clone()),
         }
     }
 
@@ -107,7 +107,7 @@ impl ServerActor {
 
         match &actions[0] {
             ConnectionAction::SendFrame(frame) => Ok(frame.clone()),
-            _ => Err("Expected SendFrame action from handle_hello".to_string()),
+            ConnectionAction::Close { reason } => Err(reason.clone()),
         }
     }
 

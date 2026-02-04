@@ -4,10 +4,10 @@
 //! current MLS state (epoch, membership, and signature) without performing full
 //! MLS operations.
 
-use ed25519_dalek::{Signature, Verifier};
+use ed25519_dalek::Verifier;
 use lockframe_proto::Frame;
 
-use super::{MlsError, MlsGroupState, constants::MAX_EPOCH};
+use super::{MlsGroupState, constants::MAX_EPOCH};
 
 /// Result of validating a frame against MLS state
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,23 +43,21 @@ impl MlsValidator {
         frame: &Frame,
         current_epoch: u64,
         group_state: &MlsGroupState,
-    ) -> Result<ValidationResult, MlsError> {
+    ) -> ValidationResult {
         debug_assert!(current_epoch < MAX_EPOCH);
 
         let frame_epoch = frame.header.epoch();
         if frame_epoch != current_epoch {
-            return Ok(ValidationResult::Reject {
-                reason: format!("epoch mismatch: expected {}, got {}", current_epoch, frame_epoch),
-            });
+            return ValidationResult::Reject {
+                reason: format!("epoch mismatch: expected {current_epoch}, got {frame_epoch}"),
+            };
         }
 
         debug_assert_eq!(frame_epoch, current_epoch);
 
         let sender_id = frame.header.sender_id();
         if !group_state.is_member(sender_id) {
-            return Ok(ValidationResult::Reject {
-                reason: format!("sender {} not in group", sender_id),
-            });
+            return ValidationResult::Reject { reason: format!("sender {sender_id} not in group") };
         }
 
         debug_assert!(group_state.is_member(sender_id));
@@ -71,43 +69,31 @@ impl MlsValidator {
     ///
     /// Use this when epoch and membership have already been validated
     /// (e.g., after sequencing when the frame has been modified).
-    pub fn validate_signature(
-        frame: &Frame,
-        group_state: &MlsGroupState,
-    ) -> Result<ValidationResult, MlsError> {
+    pub fn validate_signature(frame: &Frame, group_state: &MlsGroupState) -> ValidationResult {
         let sender_id = frame.header.sender_id();
 
-        let verifying_key = match group_state.member_key(sender_id) {
-            Some(key) => key,
-            None => {
-                return Ok(ValidationResult::Reject {
-                    reason: format!(
-                        "member {} has no signature key (group state inconsistency)",
-                        sender_id
-                    ),
-                });
-            },
+        let Some(verifying_key) = group_state.member_key(sender_id) else {
+            return ValidationResult::Reject {
+                reason: format!(
+                    "member {sender_id} has no signature key (group state inconsistency)"
+                ),
+            };
         };
 
         let signature_bytes = frame.header.signature();
 
-        let signature: Signature = match signature_bytes.as_slice().try_into() {
-            Ok(sig) => sig,
-            Err(_) => {
-                return Ok(ValidationResult::Reject {
-                    reason: "invalid signature format".to_string(),
-                });
-            },
+        let Ok(signature) = signature_bytes.as_slice().try_into() else {
+            return ValidationResult::Reject { reason: "invalid signature format".to_string() };
         };
 
         let signed_data = frame.header.signing_data();
         if verifying_key.verify(&signed_data, &signature).is_err() {
-            return Ok(ValidationResult::Reject {
-                reason: format!("signature verification failed for sender {}", sender_id),
-            });
+            return ValidationResult::Reject {
+                reason: format!("signature verification failed for sender {sender_id}"),
+            };
         }
 
-        Ok(ValidationResult::Accept)
+        ValidationResult::Accept
     }
 
     /// Validate a frame without MLS state (epoch 0, no membership check)
@@ -117,7 +103,7 @@ impl MlsValidator {
     ///
     /// Note: Validation failures return `Ok(ValidationResult::Reject)`, not
     /// errors.
-    pub fn validate_frame_no_state(frame: &Frame) -> Result<ValidationResult, MlsError> {
+    pub fn validate_frame_no_state(frame: &Frame) -> ValidationResult {
         // TODO: Right now we accept all frames here, we might want to:
         // - Check that epoch is 0
         // - Validate frame is a Welcome or initial Commit
@@ -125,16 +111,17 @@ impl MlsValidator {
 
         let frame_epoch = frame.header.epoch();
         if frame_epoch != 0 {
-            return Ok(ValidationResult::Reject {
-                reason: format!("no MLS state for room, expected epoch 0, got {}", frame_epoch),
-            });
+            return ValidationResult::Reject {
+                reason: format!("no MLS state for room, expected epoch 0, got {frame_epoch}"),
+            };
         }
 
-        Ok(ValidationResult::Accept)
+        ValidationResult::Accept
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use std::collections::HashMap;
 
@@ -193,7 +180,7 @@ mod tests {
     fn test_valid_frame_accepted() {
         let (frame, state) = create_signed_frame_and_state(100, 5, vec![100, 200, 300]);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         assert_eq!(result, ValidationResult::Accept);
     }
@@ -203,7 +190,7 @@ mod tests {
         let frame = create_test_frame(100, 3);
         let state = create_test_state(5, vec![100, 200]);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -220,7 +207,7 @@ mod tests {
         let frame = create_test_frame(100, 7);
         let state = create_test_state(5, vec![100, 200]);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -237,7 +224,7 @@ mod tests {
         let frame = create_test_frame(999, 5); // sender 999 not in group
         let state = create_test_state(5, vec![100, 200, 300]);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -279,8 +266,7 @@ mod tests {
             header.set_signature(signature.to_bytes());
             let frame = Frame::new(header, Bytes::new());
 
-            let result =
-                MlsValidator::validate_frame(&frame, epoch, &state).expect("validation failed");
+            let result = MlsValidator::validate_frame(&frame, epoch, &state);
             assert_eq!(result, ValidationResult::Accept);
         }
     }
@@ -288,7 +274,7 @@ mod tests {
     #[test]
     fn test_validate_no_state_epoch_zero() {
         let frame = create_test_frame(100, 0);
-        let result = MlsValidator::validate_frame_no_state(&frame).expect("validation failed");
+        let result = MlsValidator::validate_frame_no_state(&frame);
 
         assert_eq!(result, ValidationResult::Accept);
     }
@@ -296,7 +282,7 @@ mod tests {
     #[test]
     fn test_validate_no_state_non_zero_epoch_rejected() {
         let frame = create_test_frame(100, 5);
-        let result = MlsValidator::validate_frame_no_state(&frame).expect("validation failed");
+        let result = MlsValidator::validate_frame_no_state(&frame);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -332,7 +318,7 @@ mod tests {
         member_keys.insert(100, verifying_key.to_bytes());
         let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
         assert_eq!(result, ValidationResult::Accept);
     }
 
@@ -362,7 +348,7 @@ mod tests {
         member_keys.insert(100, wrong_verifying_key.to_bytes());
         let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -378,7 +364,7 @@ mod tests {
         let frame = create_test_frame(100, 5);
         let state = create_test_state(5, vec![100, 200, 300]);
 
-        let result = MlsValidator::validate_frame(&frame, 5, &state).expect("validation failed");
+        let result = MlsValidator::validate_frame(&frame, 5, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
@@ -386,7 +372,7 @@ mod tests {
                 assert!(reason.contains("group state inconsistency"));
             },
             ValidationResult::Accept => {
-                panic!("Expected rejection when member key is missing")
+                panic!("Expected rejection when member key is missing");
             },
         }
     }
@@ -397,7 +383,7 @@ mod tests {
         let (frame, state) = create_signed_frame_and_state(100, 5, vec![100]);
 
         // validate_signature doesn't check epoch, so we can pass a frame at any epoch
-        let result = MlsValidator::validate_signature(&frame, &state).expect("validation failed");
+        let result = MlsValidator::validate_signature(&frame, &state);
         assert_eq!(result, ValidationResult::Accept);
     }
 
@@ -424,13 +410,15 @@ mod tests {
         member_keys.insert(100, wrong_verifying_key.to_bytes());
         let state = MlsGroupState::with_keys(100, 5, [0u8; 32], vec![100], member_keys);
 
-        let result = MlsValidator::validate_signature(&frame, &state).expect("validation failed");
+        let result = MlsValidator::validate_signature(&frame, &state);
 
         match result {
             ValidationResult::Reject { reason } => {
                 assert!(reason.contains("signature verification failed"));
             },
-            ValidationResult::Accept => panic!("Expected rejection for invalid signature"),
+            ValidationResult::Accept => {
+                panic!("Expected rejection for invalid signature")
+            },
         }
     }
 }

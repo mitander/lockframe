@@ -43,7 +43,6 @@ pub struct ProposalData {
 
 /// Type of MLS proposal
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(clippy::upper_case_acronyms)]
 pub enum ProposalType {
     /// Add a new member
     Add,

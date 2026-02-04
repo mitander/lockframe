@@ -44,6 +44,6 @@ pub enum StorageError {
 
 impl From<std::io::Error> for StorageError {
     fn from(err: std::io::Error) -> Self {
-        StorageError::Io(err.to_string())
+        Self::Io(err.to_string())
     }
 }

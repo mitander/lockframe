@@ -139,7 +139,7 @@ where
 
     /// Handle `HelloReply` frame to complete connection handshake.
     async fn handle_hello_reply(&mut self, frame: Frame) -> Result<(), D::Error> {
-        let payload = match Payload::from_frame(frame) {
+        let payload = match Payload::from_frame(&frame) {
             Ok(p) => p,
             Err(e) => {
                 tracing::warn!("Failed to parse HelloReply: {:?}", e);

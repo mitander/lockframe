@@ -112,9 +112,9 @@ fn bidirectional_communication() {
 
 #[test]
 fn large_message_transfer() {
-    let mut sim = turmoil::Builder::new().build();
-
     const MSG_SIZE: usize = 8192;
+
+    let mut sim = turmoil::Builder::new().build();
 
     sim.host("server", || async {
         let listener = TcpListener::bind("0.0.0.0:443").await?;

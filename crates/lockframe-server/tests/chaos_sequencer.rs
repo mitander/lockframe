@@ -39,14 +39,13 @@ fn arbitrary_frame() -> impl Strategy<Value = Frame> {
 }
 
 /// Verify that frames stored in a room have sequential indices with no gaps
+#[allow(clippy::expect_used)]
 fn verify_sequential_indices(storage: &impl Storage, room_id: u128) {
     if let Ok(Some(latest)) = storage.latest_log_index(room_id) {
-        // Load all frames
         let frames = storage
             .load_frames(room_id, 0, (latest + 1) as usize)
             .expect("load_frames should succeed");
 
-        // Verify sequential indices
         for (expected_index, frame) in frames.iter().enumerate() {
             assert_eq!(
                 frame.header.log_index(),

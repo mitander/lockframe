@@ -92,16 +92,16 @@ pub mod test_utils {
 
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use super::Environment;
 
     /// Mock environment with controllable time for deterministic testing.
     ///
-    /// Time starts at a fixed virtual epoch (Duration::ZERO) and can be
+    /// Time starts at a fixed virtual epoch (`Duration::ZERO`) and can be
     /// advanced manually via `advance_time()`. This ensures tests are fully
     /// reproducible regardless of when they run and eliminates any dependency
     /// on the system clock.
     ///
-    /// Randomness is provided by a StdRng that is either:
+    /// Randomness is provided by a `StdRng` that is either:
     /// - Seeded with a fixed value (deterministic mode)
     /// - Seeded from OS entropy (crypto mode for MLS tests)
     #[derive(Clone)]
@@ -136,7 +136,10 @@ pub mod test_utils {
         type Output = Duration;
 
         fn sub(self, rhs: Self) -> Self::Output {
-            self.0 - rhs.0
+            #[allow(clippy::expect_used)]
+            self.0
+                .checked_sub(rhs.0)
+                .expect("invariant: time should not go backwards (later - earlier)")
         }
     }
 
@@ -175,8 +178,15 @@ pub mod test_utils {
         /// Advance the mock clock by the given duration.
         ///
         /// This allows tests to simulate time passing without actual delays.
+        ///
+        /// # Panics
+        ///
+        /// Panics if duration exceeds `u64::MAX` nanoseconds (~584 years).
         pub fn advance_time(&self, duration: Duration) {
-            self.offset_nanos.fetch_add(duration.as_nanos() as u64, Ordering::SeqCst);
+            #[allow(clippy::expect_used)]
+            let nanos = u64::try_from(duration.as_nanos())
+                .expect("invariant: duration exceeds u64::MAX nanoseconds (~584 years)");
+            self.offset_nanos.fetch_add(nanos, Ordering::SeqCst);
         }
     }
 
@@ -194,19 +204,19 @@ pub mod test_utils {
             VirtualInstant(Duration::from_nanos(nanos))
         }
 
-        fn sleep(&self, _duration: Duration) -> impl std::future::Future<Output = ()> + Send {
+        async fn sleep(&self, _duration: Duration) {
             // Don't sleep, tests control time manually
-            async {}
         }
 
         fn random_bytes(&self, buffer: &mut [u8]) {
+            #[allow(clippy::expect_used)]
             self.rng.lock().expect("MockEnv RNG mutex poisoned").fill_bytes(buffer);
         }
 
         fn wall_clock_secs(&self) -> u64 {
             // For testing, return a fixed timestamp (2024-01-01 00:00:00 UTC)
             // Tests that need specific timestamps can override this behavior
-            1704067200
+            1_704_067_200
         }
     }
 
@@ -278,6 +288,12 @@ pub mod test_utils {
 
             // Very unlikely to be equal with real randomness
             assert_ne!(a1, b1);
+        }
+
+        #[test]
+        fn mock_env_wall_clock_secs_returns_fixed_value() {
+            let env = MockEnv::new();
+            assert_eq!(env.wall_clock_secs(), 1_704_067_200, "wall_clock_secs should return a fixed timestamp for testing");
         }
     }
 }

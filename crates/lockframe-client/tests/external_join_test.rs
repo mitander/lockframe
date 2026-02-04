@@ -38,7 +38,7 @@ fn external_join_rejects_invalid_group_info() {
 
         // Truncated valid-looking data
         let truncated = vec![0x00, 0x01, 0x00]; // MLS version prefix, truncated
-        let result = MlsGroup::join_from_external(env.clone(), ROOM_ID, 2, &truncated);
+        let result = MlsGroup::join_from_external(env, ROOM_ID, 2, &truncated);
         assert!(result.is_err(), "Should reject truncated GroupInfo");
 
         Ok(())
@@ -59,7 +59,7 @@ fn client_external_join_existing_room_fails() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice = ClientIdentity::new(1);
-        let mut alice_client = Client::new(env.clone(), alice);
+        let mut alice_client = Client::new(env, alice);
 
         // Alice creates room
         alice_client.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
@@ -88,7 +88,7 @@ fn client_external_join_requests_group_info() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let bob = ClientIdentity::new(2);
-        let mut bob_client = Client::new(env.clone(), bob);
+        let mut bob_client = Client::new(env, bob);
 
         let actions = bob_client
             .handle(ClientEvent::ExternalJoin { room_id: ROOM_ID })
@@ -135,7 +135,7 @@ fn client_processes_group_info_response() {
 
         // Bob initiates external join
         let bob = ClientIdentity::new(2);
-        let mut bob_client = Client::new(env.clone(), bob);
+        let mut bob_client = Client::new(env, bob);
         bob_client.handle(ClientEvent::ExternalJoin { room_id: ROOM_ID }).expect("initiate");
 
         // Simulate server responding with GroupInfo
@@ -179,14 +179,14 @@ fn external_join_is_deterministic() {
         let (alice1, _) = MlsGroup::new(env1.clone(), ROOM_ID, 1).expect("alice1");
         let group_info1 = alice1.export_group_info().expect("export1");
         let (bob1, actions1) =
-            MlsGroup::join_from_external(env1.clone(), ROOM_ID, 2, &group_info1).expect("bob1");
+            MlsGroup::join_from_external(env1, ROOM_ID, 2, &group_info1).expect("bob1");
 
         // Run 2 with same seed 42
         let env2 = SimEnv::with_seed(42);
         let (alice2, _) = MlsGroup::new(env2.clone(), ROOM_ID, 1).expect("alice2");
         let group_info2 = alice2.export_group_info().expect("export2");
         let (bob2, actions2) =
-            MlsGroup::join_from_external(env2.clone(), ROOM_ID, 2, &group_info2).expect("bob2");
+            MlsGroup::join_from_external(env2, ROOM_ID, 2, &group_info2).expect("bob2");
 
         // Oracle: Same seed MUST produce identical results
         assert_eq!(bob1.epoch(), bob2.epoch(), "Same seed must produce same epoch");
@@ -197,7 +197,7 @@ fn external_join_is_deterministic() {
         let (alice3, _) = MlsGroup::new(env3.clone(), ROOM_ID, 1).expect("alice3");
         let group_info3 = alice3.export_group_info().expect("export3");
         let (_bob3, actions3) =
-            MlsGroup::join_from_external(env3.clone(), ROOM_ID, 2, &group_info3).expect("bob3");
+            MlsGroup::join_from_external(env3, ROOM_ID, 2, &group_info3).expect("bob3");
 
         assert!(!actions3.is_empty(), "Different seed should still produce valid join");
 
@@ -229,7 +229,7 @@ fn external_join_creates_valid_commit() {
 
         // Bob joins via external commit
         let (bob_group, actions) =
-            MlsGroup::join_from_external(env.clone(), ROOM_ID, 2, &group_info_bytes).expect("bob");
+            MlsGroup::join_from_external(env, ROOM_ID, 2, &group_info_bytes).expect("bob");
 
         // Verify Bob's group state
         assert_eq!(bob_group.room_id(), ROOM_ID);

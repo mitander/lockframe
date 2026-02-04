@@ -61,7 +61,6 @@ impl SimTransport {
     /// clients that only need to connect to servers.
     ///
     /// Use the Transport trait's `connect()` method to establish connections.
-    #[must_use]
     pub fn client() -> Self {
         Self { listener: None }
     }

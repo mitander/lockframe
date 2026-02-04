@@ -20,6 +20,7 @@ fn create_test_frame(room_id: u128, sender_id: u64, epoch: u64, payload: Vec<u8>
 }
 
 /// Execute sequencer actions against storage.
+#[allow(clippy::expect_used)]
 fn execute_actions(actions: Vec<SequencerAction>, storage: &MemoryStorage) {
     for action in actions {
         if let SequencerAction::StoreFrame { room_id, log_index, frame } = action {
@@ -29,6 +30,7 @@ fn execute_actions(actions: Vec<SequencerAction>, storage: &MemoryStorage) {
 }
 
 /// Verify sequential log indices with no gaps.
+#[allow(clippy::expect_used)]
 fn verify_sequential_indices(storage: &MemoryStorage, room_id: u128, expected_count: usize) {
     let frames = storage.load_frames(room_id, 0, expected_count + 10).expect("load_frames failed");
     assert_eq!(frames.len(), expected_count);

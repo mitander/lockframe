@@ -96,13 +96,13 @@ pub struct Server {
 
 impl Server {
     /// Create and bind a new server.
-    pub async fn bind(config: ServerRuntimeConfig) -> Result<Self, ServerError> {
+    pub fn bind(config: ServerRuntimeConfig) -> Result<Self, ServerError> {
         let env = SystemEnv::new();
         let storage = MemoryStorage::new();
         let driver = ServerDriver::new(env.clone(), storage, config.driver);
 
         let transport =
-            QuinnTransport::bind(&config.bind_address, config.cert_path, config.key_path).await?;
+            QuinnTransport::bind(&config.bind_address, config.cert_path, config.key_path)?;
 
         Ok(Self { driver, transport, env })
     }

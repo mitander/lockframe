@@ -170,7 +170,8 @@ impl RoomManager {
             .iter()
             .map(|f| {
                 let mut buf = Vec::new();
-                f.encode(&mut buf).expect("invariant: stored frames are valid");
+                #[allow(clippy::expect_used)]
+                f.encode(&mut buf).expect("invariant: Vec write never fails");
                 buf
             })
             .collect();

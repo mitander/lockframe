@@ -11,7 +11,8 @@
 //!
 //! # Invariants
 //!
-//! - `payload_size > MAX_PAYLOAD` (16MB) MUST return `ProtocolError::FrameTooLarge`
+//! - `payload_size > MAX_PAYLOAD` (16MB) MUST return
+//!   `ProtocolError::FrameTooLarge`
 //! - Invalid magic bytes MUST return `ProtocolError::InvalidMagic`
 //! - `room_id = 0` decodes (parser valid) but rejected by Sequencer (semantic)
 //! - All decode errors MUST be structured (never panic)
@@ -112,7 +113,7 @@ fuzz_target!(|boundary: BoundaryFrame| {
             buffer[0..4].copy_from_slice(&LOCKFRAME_MAGIC);
             let idx = (offset % 4) as usize;
             buffer[idx] = buffer[idx].wrapping_add(1);
-        }
+        },
         MagicBytes::AllZeros => buffer[0..4].fill(0),
         MagicBytes::AllOnes => buffer[0..4].fill(0xFF),
         MagicBytes::Random(bytes) => buffer[0..4].copy_from_slice(&bytes),
@@ -157,15 +158,8 @@ fuzz_target!(|boundary: BoundaryFrame| {
 
     match Frame::decode(&buffer) {
         Ok(frame) => {
-            if buffer[0..4] != LOCKFRAME_MAGIC {
-                panic!("Frame decoded with invalid magic: {:02X?}", &buffer[0..4]);
-            }
-            if payload_size_value > MAX_PAYLOAD_SIZE {
-                panic!(
-                    "Frame decoded with payload_size {} > MAX {}",
-                    payload_size_value, MAX_PAYLOAD_SIZE
-                );
-            }
+            assert_eq!(buffer[0..4], LOCKFRAME_MAGIC);
+            assert!(payload_size_value <= MAX_PAYLOAD_SIZE);
 
             let opcode = frame.header.opcode_enum();
             let _ = frame.header.room_id();
@@ -176,8 +170,8 @@ fuzz_target!(|boundary: BoundaryFrame| {
             }
             let _ = frame.header.payload_size();
             let _ = frame.header.signature();
-        }
-        Err(_) => {}
+        },
+        Err(_) => {},
     }
 
     if let Some(opcode_enum) = Opcode::from_u16(boundary.opcode) {

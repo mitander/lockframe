@@ -44,18 +44,18 @@ fn client_large_message_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice = ClientIdentity::new(1);
-        let mut alice_client = Client::new(env.clone(), alice);
+        let mut alice_client = Client::new(env, alice);
 
         alice_client.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
         // Send messages of various sizes
-        let sizes = [1, 100, 1000, 10000, 100000];
+        let sizes = [1, 100, 1_000, 10_000, 100_000];
 
         for &size in &sizes {
             let plaintext = vec![b'X'; size];
             let actions = alice_client
                 .handle(ClientEvent::SendMessage { room_id: ROOM_ID, plaintext: plaintext.clone() })
-                .unwrap_or_else(|_| panic!("send {size}-byte message"));
+                .expect("send {size}-byte message");
 
             let frames = extract_send_frames(&actions);
             assert_eq!(frames.len(), 1);
@@ -97,7 +97,7 @@ fn client_empty_message_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice = ClientIdentity::new(1);
-        let mut alice_client = Client::new(env.clone(), alice);
+        let mut alice_client = Client::new(env, alice);
 
         alice_client.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
@@ -141,7 +141,7 @@ fn client_malformed_payload_handling() {
     sim.host("test", || async {
         let env = SimEnv::new();
         let alice_identity = ClientIdentity::new(1);
-        let mut alice = Client::new(env.clone(), alice_identity);
+        let mut alice = Client::new(env, alice_identity);
 
         alice.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room");
 
@@ -196,7 +196,7 @@ fn client_encryption_determinism() {
         // First run with seed 12345
         let env1 = SimEnv::with_seed(12345);
         let alice1 = ClientIdentity::new(1);
-        let mut alice_client1 = Client::new(env1.clone(), alice1);
+        let mut alice_client1 = Client::new(env1, alice1);
 
         alice_client1.handle(ClientEvent::CreateRoom { room_id: ROOM_ID }).expect("create room 1");
 
@@ -210,6 +210,7 @@ fn client_encryption_determinism() {
                 .expect("send message 1");
 
             let frames = extract_send_frames(&actions);
+            assert_eq!(frames.len(), 1);
             payloads1.push(frames[0].payload.to_vec());
         }
 
@@ -217,7 +218,7 @@ fn client_encryption_determinism() {
         let room_id_2 = ROOM_ID.wrapping_add(1);
         let env2 = SimEnv::with_seed(12345);
         let alice2 = ClientIdentity::new(1);
-        let mut alice_client2 = Client::new(env2.clone(), alice2);
+        let mut alice_client2 = Client::new(env2, alice2);
 
         alice_client2
             .handle(ClientEvent::CreateRoom { room_id: room_id_2 })
@@ -240,7 +241,7 @@ fn client_encryption_determinism() {
         let room_id_3 = ROOM_ID.wrapping_add(2);
         let env3 = SimEnv::with_seed(54321);
         let alice3 = ClientIdentity::new(1);
-        let mut alice_client3 = Client::new(env3.clone(), alice3);
+        let mut alice_client3 = Client::new(env3, alice3);
 
         alice_client3
             .handle(ClientEvent::CreateRoom { room_id: room_id_3 })

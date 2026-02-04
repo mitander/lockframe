@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_types, reason = "Synchronous in-memory operations only")]
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -56,8 +58,9 @@ impl MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned (a thread panicked while
     /// holding the lock). This is acceptable for test/simulation code.
+    #[allow(clippy::expect_used)]
     pub fn room_count(&self) -> usize {
-        self.inner.lock().expect("MemoryStorage mutex poisoned").frames.len()
+        self.inner.lock().expect("Mutex poisoned").frames.len()
     }
 
     /// Total number of frames across all rooms.
@@ -68,14 +71,10 @@ impl MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned (a thread panicked while
     /// holding the lock). This is acceptable for test/simulation code.
+    #[allow(clippy::expect_used)]
     pub fn total_frame_count(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("MemoryStorage mutex poisoned")
-            .frames
-            .values()
-            .map(std::vec::Vec::len)
-            .sum()
+        let inner = self.inner.lock().expect("Mutex poisoned");
+        inner.frames.values().map(std::vec::Vec::len).sum()
     }
 }
 
@@ -90,13 +89,14 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn store_frame(
         &self,
         room_id: u128,
         log_index: u64,
         frame: &Frame,
     ) -> Result<(), StorageError> {
-        let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let mut inner = self.inner.lock().expect("Mutex poisoned");
 
         let frames = inner.frames.entry(room_id).or_default();
 
@@ -123,8 +123,9 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn latest_log_index(&self, room_id: u128) -> Result<Option<u64>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let inner = self.inner.lock().expect("Mutex poisoned");
 
         Ok(inner.frames.get(&room_id).and_then(|frames| {
             if frames.is_empty() { None } else { Some(frames.len() as u64 - 1) }
@@ -135,13 +136,14 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn load_frames(
         &self,
         room_id: u128,
         from: u64,
         limit: usize,
     ) -> Result<Vec<Frame>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let inner = self.inner.lock().expect("Mutex poisoned");
 
         let frames = inner
             .frames
@@ -162,10 +164,9 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn store_mls_state(&self, room_id: u128, state: &MlsGroupState) -> Result<(), StorageError> {
-        let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
-
-        inner.mls_states.insert(room_id, state.clone());
+        self.inner.lock().expect("Mutex poisoned").mls_states.insert(room_id, state.clone());
 
         Ok(())
     }
@@ -174,8 +175,9 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn load_mls_state(&self, room_id: u128) -> Result<Option<MlsGroupState>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let inner = self.inner.lock().expect("Mutex poisoned");
 
         Ok(inner.mls_states.get(&room_id).cloned())
     }
@@ -184,15 +186,18 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn store_group_info(
         &self,
         room_id: u128,
         epoch: u64,
         group_info: &[u8],
     ) -> Result<(), StorageError> {
-        let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
-
-        inner.group_infos.insert(room_id, (epoch, group_info.to_vec()));
+        self.inner
+            .lock()
+            .expect("Mutex poisoned")
+            .group_infos
+            .insert(room_id, (epoch, group_info.to_vec()));
 
         Ok(())
     }
@@ -201,8 +206,9 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn load_group_info(&self, room_id: u128) -> Result<Option<(u64, Vec<u8>)>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let inner = self.inner.lock().expect("Mutex poisoned");
 
         Ok(inner.group_infos.get(&room_id).cloned())
     }
@@ -211,8 +217,9 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn list_rooms(&self) -> Result<Vec<u128>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
+        let inner = self.inner.lock().expect("Mutex poisoned");
         Ok(inner.rooms.keys().copied().collect())
     }
 
@@ -220,16 +227,18 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn create_room(
         &self,
         room_id: u128,
         metadata: &StoredRoomMetadata,
     ) -> Result<(), StorageError> {
-        let mut inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
-
-        // Don't overwrite if exists
-        inner.rooms.entry(room_id).or_insert_with(|| metadata.clone());
-
+        self.inner
+            .lock()
+            .expect("Mutex poisoned")
+            .rooms
+            .entry(room_id)
+            .or_insert_with(|| metadata.clone());
         Ok(())
     }
 
@@ -237,12 +246,12 @@ impl Storage for MemoryStorage {
     ///
     /// Panics if the internal mutex is poisoned. This is acceptable for test
     /// code.
+    #[allow(clippy::expect_used)]
     fn load_room_metadata(
         &self,
         room_id: u128,
     ) -> Result<Option<StoredRoomMetadata>, StorageError> {
-        let inner = self.inner.lock().expect("MemoryStorage mutex poisoned");
-        Ok(inner.rooms.get(&room_id).cloned())
+        Ok(self.inner.lock().expect("Mutex poisoned").rooms.get(&room_id).cloned())
     }
 }
 
@@ -337,7 +346,9 @@ mod tests {
                 assert_eq!(expected, 1);
                 assert_eq!(got, 2);
             },
-            _ => panic!("Expected Conflict error"),
+            _ => {
+                panic!("Expected Conflict error");
+            },
         }
     }
 
@@ -474,13 +485,13 @@ mod tests {
     fn test_create_room() {
         let storage = MemoryStorage::new();
         let room_id = 100u128;
-        let metadata = StoredRoomMetadata { creator: 42, created_at_secs: 1234567890 };
+        let metadata = StoredRoomMetadata { creator: 42, created_at_secs: 1_234_567_890 };
 
         storage.create_room(room_id, &metadata).unwrap();
 
         let loaded = storage.load_room_metadata(room_id).unwrap().unwrap();
         assert_eq!(loaded.creator, 42);
-        assert_eq!(loaded.created_at_secs, 1234567890);
+        assert_eq!(loaded.created_at_secs, 1_234_567_890);
     }
 
     #[test]

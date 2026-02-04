@@ -7,7 +7,7 @@
 //! 3. Determinism: Same inputs always produce same outputs
 //! 4. Isolation: Different senders/epochs produce different keys
 
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+#![allow(clippy::unwrap_used)]
 
 use lockframe_crypto::{
     MessageKey, NONCE_RANDOM_SIZE, SymmetricRatchet, decrypt_message, derive_sender_key_seed,

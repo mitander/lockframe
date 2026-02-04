@@ -10,26 +10,28 @@ use lockframe_proto::{
     Frame, FrameHeader, Opcode,
     payloads::{Payload, session::Hello},
 };
-use lockframe_server::{Server, ServerRuntimeConfig};
+use lockframe_server::{DriverConfig, Server, ServerRuntimeConfig};
 use tokio::time::timeout;
 
 /// Create a proper Hello frame with payload.
+#[allow(clippy::expect_used)]
 fn make_hello_frame() -> Frame {
     let hello = Hello { version: 1, capabilities: vec![], sender_id: None, auth_token: None };
     let payload = Payload::Hello(hello);
-    payload.into_frame(FrameHeader::new(Opcode::Hello)).unwrap()
+    payload.into_frame(FrameHeader::new(Opcode::Hello)).expect("frame conversion should work")
 }
 
 /// Start a real server, spawn its run loop, and return the address.
-async fn start_server() -> String {
+#[allow(clippy::expect_used)]
+fn start_server() -> String {
     let config = ServerRuntimeConfig {
         bind_address: "127.0.0.1:0".to_string(),
         cert_path: None,
         key_path: None,
-        driver: Default::default(),
+        driver: DriverConfig::default(),
     };
-    let server = Server::bind(config).await.unwrap();
-    let addr = server.local_addr().unwrap().to_string();
+    let server = Server::bind(config).expect("valid server config");
+    let addr = server.local_addr().expect("underlying socket").to_string();
 
     tokio::spawn(async move {
         let _ = server.run().await;
@@ -51,6 +53,7 @@ async fn connect_with_retry(addr: &str) -> ConnectedClient {
             Err(_) if attempt < 19 => {
                 tokio::task::yield_now().await;
             },
+            #[allow(clippy::panic)]
             Err(e) => panic!("failed to connect after 20 attempts: {e}"),
         }
     }
@@ -59,7 +62,7 @@ async fn connect_with_retry(addr: &str) -> ConnectedClient {
 
 #[tokio::test]
 async fn client_connects_to_server() {
-    let addr = start_server().await;
+    let addr = start_server();
     let _client = connect_with_retry(&addr).await;
 }
 
@@ -76,7 +79,7 @@ async fn client_connect_fails_for_invalid_address() {
 
 #[tokio::test]
 async fn client_can_send_frame_to_server() {
-    let addr = start_server().await;
+    let addr = start_server();
     let client = connect_with_retry(&addr).await;
 
     let frame = make_hello_frame();
@@ -87,7 +90,7 @@ async fn client_can_send_frame_to_server() {
 
 #[tokio::test]
 async fn client_receives_hello_reply_from_server() {
-    let addr = start_server().await;
+    let addr = start_server();
     let mut client = connect_with_retry(&addr).await;
 
     let frame = make_hello_frame();
@@ -105,7 +108,7 @@ async fn client_receives_hello_reply_from_server() {
 
 #[tokio::test]
 async fn client_ping_pong_after_handshake() {
-    let addr = start_server().await;
+    let addr = start_server();
     let mut client = connect_with_retry(&addr).await;
 
     let hello_frame = make_hello_frame();
@@ -132,7 +135,7 @@ async fn client_ping_pong_after_handshake() {
 
 #[tokio::test]
 async fn client_stops_cleanly() {
-    let addr = start_server().await;
+    let addr = start_server();
     let client = connect_with_retry(&addr).await;
 
     // Stop should not panic

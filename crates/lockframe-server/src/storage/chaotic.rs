@@ -4,6 +4,8 @@
 //! recovery. Used for chaos testing to ensure the system handles storage
 //! failures gracefully.
 
+#![allow(clippy::disallowed_types, reason = "Locking simple RNG state")]
+
 use std::sync::{Arc, Mutex};
 
 use lockframe_core::mls::MlsGroupState;
@@ -44,8 +46,8 @@ impl ChaoticRng {
     /// Generate next random value [0.0, 1.0)
     fn next(&mut self) -> f64 {
         // LCG constants from Numerical Recipes
-        const A: u64 = 1664525;
-        const C: u64 = 1013904223;
+        const A: u64 = 1_664_525;
+        const C: u64 = 1_013_904_223;
         const M: u64 = 1u64 << 32;
 
         self.state = (A.wrapping_mul(self.state).wrapping_add(C)) % M;
@@ -98,17 +100,20 @@ impl<S: Storage> ChaoticStorage<S> {
     /// Used for performance oracles to verify O(n) complexity.
     /// Each call to any storage method increments this counter.
     pub fn operation_count(&self) -> usize {
+        #[allow(clippy::expect_used)]
         *self.operation_count.lock().expect("operation_count mutex poisoned")
     }
 
     /// Increment operation counter
     fn increment_operation_count(&self) {
+        #[allow(clippy::expect_used)]
         let mut count = self.operation_count.lock().expect("operation_count mutex poisoned");
         *count += 1;
     }
 
     /// Check if this operation should fail
     fn should_fail(&self) -> bool {
+        #[allow(clippy::expect_used)]
         self.rng.lock().expect("ChaoticRng mutex poisoned").should_fail(self.failure_rate)
     }
 }

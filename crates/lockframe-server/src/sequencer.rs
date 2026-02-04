@@ -7,7 +7,7 @@
 //! Flow: load state from storage, validate frame structure (magic, version,
 //! payload size), assign next `log_index`, return sequencing actions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
 
 use lockframe_core::mls::MAX_EPOCH;
 use lockframe_proto::{Frame, FrameHeader};
@@ -33,7 +33,7 @@ pub enum SequencerError {
 
 impl From<StorageError> for SequencerError {
     fn from(err: StorageError) -> Self {
-        SequencerError::Storage(err.to_string())
+        Self::Storage(err.to_string())
     }
 }
 
@@ -176,37 +176,40 @@ impl Sequencer {
             return Ok(vec![SequencerAction::BroadcastToRoom { room_id, frame }]);
         }
 
-        if let std::collections::hash_map::Entry::Vacant(e) = self.rooms.entry(room_id) {
-            let latest_index = storage.latest_log_index(room_id).map_err(|e| {
-                tracing::error!(
+        let room = match self.rooms.entry(room_id) {
+            hash_map::Entry::Vacant(e) => {
+                let latest_index = storage.latest_log_index(room_id).map_err(|e| {
+                    tracing::error!(
+                        room_id = %room_id,
+                        error = %e,
+                        "Failed to load latest_log_index during room initialization"
+                    );
+                    e
+                })?;
+
+                let next_log_index = latest_index.map_or(0, |i| i + 1);
+
+                tracing::info!(
                     room_id = %room_id,
-                    error = %e,
-                    "Failed to load latest_log_index during room initialization"
+                    latest_storage_index = ?latest_index,
+                    next_log_index,
+                    "Initializing sequencer for room"
                 );
-                e
-            })?;
 
-            let next_log_index = latest_index.map_or(0, |i| i + 1);
+                debug_assert!(
+                    latest_index.map_or(next_log_index == 0, |i| next_log_index == i + 1)
+                );
 
-            tracing::info!(
-                room_id = %room_id,
-                latest_storage_index = ?latest_index,
-                next_log_index,
-                "Initializing sequencer for room"
-            );
+                tracing::debug!(
+                    room_id = %room_id,
+                    next_log_index,
+                    "Initialized room state from storage"
+                );
 
-            debug_assert!(latest_index.map_or(next_log_index == 0, |i| next_log_index == i + 1));
-
-            tracing::debug!(
-                room_id = %room_id,
-                next_log_index,
-                "Initialized room state from storage"
-            );
-
-            e.insert(RoomSequencer { next_log_index });
-        }
-
-        let room = self.rooms.get_mut(&room_id).expect("room must exist after initialization");
+                e.insert(RoomSequencer { next_log_index })
+            },
+            hash_map::Entry::Occupied(e) => e.into_mut(),
+        };
         let log_index = room.next_log_index;
 
         room.next_log_index = room.next_log_index.checked_add(1).ok_or_else(|| {
@@ -217,7 +220,7 @@ impl Sequencer {
 
         debug_assert!(room.next_log_index > log_index);
 
-        let sequenced_frame = rebuild_frame_with_index(frame.clone(), log_index)?;
+        let sequenced_frame = rebuild_frame_with_index(frame, log_index);
 
         debug_assert_eq!(sequenced_frame.header.log_index(), log_index);
 
@@ -293,11 +296,11 @@ impl Default for Sequencer {
 ///
 /// This creates a new `FrameHeader` with the updated `log_index` while
 /// reusing the payload bytes (zero-copy via `Bytes::clone` which is Arc-based).
-fn rebuild_frame_with_index(original: Frame, log_index: u64) -> Result<Frame, SequencerError> {
+fn rebuild_frame_with_index(original: Frame, log_index: u64) -> Frame {
     let mut new_header = original.header;
     new_header.set_log_index(log_index);
 
-    Ok(Frame::new(new_header, original.payload.clone()))
+    Frame::new(new_header, original.payload)
 }
 
 #[cfg(test)]
@@ -335,7 +338,9 @@ mod tests {
                 assert_eq!(*log_index, 0);
                 assert_eq!(frame.header.log_index(), 0);
             },
-            _ => panic!("Expected AcceptFrame"),
+            _ => {
+                panic!("Expected AcceptFrame")
+            },
         }
 
         // Check StoreFrame action
@@ -344,7 +349,9 @@ mod tests {
                 assert_eq!(*room_id, 100);
                 assert_eq!(*log_index, 0);
             },
-            _ => panic!("Expected StoreFrame"),
+            _ => {
+                panic!("Expected StoreFrame")
+            },
         }
 
         // Check BroadcastToRoom action
@@ -353,7 +360,9 @@ mod tests {
                 assert_eq!(*room_id, 100);
                 assert_eq!(frame.header.log_index(), 0);
             },
-            _ => panic!("Expected BroadcastToRoom"),
+            _ => {
+                panic!("Expected BroadcastToRoom")
+            },
         }
     }
 
@@ -374,7 +383,9 @@ mod tests {
                 SequencerAction::AcceptFrame { log_index, .. } => {
                     assert_eq!(*log_index, i);
                 },
-                _ => panic!("Expected AcceptFrame"),
+                _ => {
+                    panic!("Expected AcceptFrame")
+                },
             }
 
             // Execute StoreFrame action
@@ -444,7 +455,9 @@ mod tests {
             SequencerAction::AcceptFrame { log_index, .. } => {
                 assert_eq!(*log_index, 5);
             },
-            _ => panic!("Expected AcceptFrame"),
+            _ => {
+                panic!("Expected AcceptFrame")
+            },
         }
     }
 
@@ -469,7 +482,9 @@ mod tests {
             SequencerAction::AcceptFrame { log_index, .. } => {
                 assert_eq!(*log_index, 0);
             },
-            _ => panic!("Expected AcceptFrame"),
+            _ => {
+                panic!("Expected AcceptFrame")
+            },
         }
     }
 
@@ -501,7 +516,9 @@ mod tests {
             SequencerAction::AcceptFrame { log_index, .. } => {
                 assert_eq!(*log_index, 5);
             },
-            _ => panic!("Expected AcceptFrame"),
+            _ => {
+                panic!("Expected AcceptFrame")
+            },
         }
     }
 }

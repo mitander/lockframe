@@ -56,7 +56,6 @@ pub fn derive_all_sender_seeds(
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::uninlined_format_args)]
 mod tests {
     use super::*;
 
@@ -140,8 +139,7 @@ mod tests {
             let individual_seed = derive_sender_key_seed(epoch_secret, epoch, index);
             assert_eq!(
                 batch_seed, individual_seed,
-                "batch and individual must match for sender {}",
-                index
+                "batch and individual must match for sender {index}"
             );
         }
     }

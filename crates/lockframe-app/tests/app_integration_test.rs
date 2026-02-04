@@ -89,7 +89,7 @@ fn frames_by_opcode(frames: &[Frame], opcode: Opcode) -> Vec<Frame> {
 
 /// Extract `GroupInfo` payload from a frame.
 fn extract_group_info(frame: &Frame) -> Option<GroupInfoPayload> {
-    match Payload::from_frame(frame.clone()).ok()? {
+    match Payload::from_frame(frame).ok()? {
         Payload::GroupInfo(p) => Some(p),
         _ => None,
     }
@@ -156,7 +156,7 @@ fn external_join_flow() {
     // Bob tries to join
     let bob_sender_id = 2;
     let mut bob_app = connected_app(bob_sender_id);
-    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), bob_sender_id);
+    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env, bob_sender_id);
 
     // Bob types "/join 100"
     let bob_frames = join_room(&mut bob_app, &mut bob_bridge, 100);
@@ -240,7 +240,7 @@ fn external_commit_broadcast_back_to_joiner() {
     // Bob joins
     let bob_id = 2;
     let mut bob_app = connected_app(bob_id);
-    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), bob_id);
+    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env, bob_id);
 
     join_room(&mut bob_app, &mut bob_bridge, 100);
 
@@ -336,10 +336,10 @@ fn third_client_external_join_messaging() {
 
     // Alice sends a message at epoch 1
     let alice_msg1 = send_message(&mut alice_app, &mut alice_bridge, 100, "Hello from Alice");
-    let alice_msgs1 = frames_by_opcode(&alice_msg1, Opcode::AppMessage);
+    let alice_msg_frames = frames_by_opcode(&alice_msg1, Opcode::AppMessage);
 
     // Bob receives Alice's message
-    receive_frame(&mut bob_app, &mut bob_bridge, alice_msgs1[0].clone());
+    receive_frame(&mut bob_app, &mut bob_bridge, alice_msg_frames[0].clone());
     let bob_room = bob_app.rooms().get(&100).expect("Bob room");
     assert!(
         bob_room.messages.iter().any(|m| m.content == b"Hello from Alice"),
@@ -348,21 +348,21 @@ fn third_client_external_join_messaging() {
 
     // Bob sends a message
     let bob_msg1 = send_message(&mut bob_app, &mut bob_bridge, 100, "Hello from Bob");
-    let bob_msgs1 = frames_by_opcode(&bob_msg1, Opcode::AppMessage);
+    let bob_msg_frames = frames_by_opcode(&bob_msg1, Opcode::AppMessage);
 
     // Alice receives Bob's message
-    receive_frame(&mut alice_app, &mut alice_bridge, bob_msgs1[0].clone());
+    receive_frame(&mut alice_app, &mut alice_bridge, bob_msg_frames[0].clone());
 
     // NOW Charlie joins (second external joiner, third member)
     let charlie_id = 3;
     let mut charlie_app = connected_app(charlie_id);
-    let mut charlie_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), charlie_id);
+    let mut charlie_bridge: Bridge<SimEnv> = Bridge::new(env, charlie_id);
 
     join_room(&mut charlie_app, &mut charlie_bridge, 100);
 
     // Charlie needs GroupInfo at current epoch (1)
     // Server provides Bob's published GroupInfo (stored from his external join)
-    let charlie_gi_frame = Payload::GroupInfo(group_info_epoch1.clone())
+    let charlie_gi_frame = Payload::GroupInfo(group_info_epoch1)
         .into_frame(FrameHeader::new(Opcode::GroupInfo))
         .expect("frame");
     receive_frame(&mut charlie_app, &mut charlie_bridge, charlie_gi_frame);
@@ -446,7 +446,7 @@ fn sync_request_sent_on_join() {
     // Bob joins
     let bob_id = 2;
     let mut bob_app = connected_app(bob_id);
-    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), bob_id);
+    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env, bob_id);
 
     join_room(&mut bob_app, &mut bob_bridge, 100);
     let gi_frame = Payload::GroupInfo(group_info)
@@ -483,7 +483,7 @@ fn same_epoch_messages_work() {
     // Bob joins
     let bob_id = 2;
     let mut bob_app = connected_app(bob_id);
-    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env.clone(), bob_id);
+    let mut bob_bridge: Bridge<SimEnv> = Bridge::new(env, bob_id);
 
     join_room(&mut bob_app, &mut bob_bridge, 100);
     let gi_frame = Payload::GroupInfo(group_info)

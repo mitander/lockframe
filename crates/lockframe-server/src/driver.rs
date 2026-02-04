@@ -11,10 +11,15 @@ use lockframe_core::{
 };
 use lockframe_proto::{
     Frame, FrameHeader, Opcode, Payload,
-    payloads::{ErrorPayload, mls::KeyPackageFetchPayload, session::SyncResponse},
+    payloads::{
+        ErrorPayload,
+        mls::{GroupInfoPayload, KeyPackageFetchPayload},
+        session::SyncResponse,
+    },
 };
 
 use crate::{
+    RoomError,
     key_package_registry::{KeyPackageEntry, KeyPackageRegistry, StoreResult},
     registry::{ConnectionRegistry, SessionInfo},
     room_manager::{RoomAction, RoomManager},
@@ -174,30 +179,27 @@ where
     ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
         match event {
             ServerEvent::ConnectionAccepted { session_id } => {
-                self.handle_connection_accepted(session_id)
+                Ok(self.handle_connection_accepted(session_id))
             },
             ServerEvent::FrameReceived { session_id, frame } => {
                 self.handle_frame_received(session_id, frame)
             },
             ServerEvent::ConnectionClosed { session_id, reason } => {
-                self.handle_connection_closed(session_id, &reason)
+                Ok(self.handle_connection_closed(session_id, &reason))
             },
-            ServerEvent::Tick => self.handle_tick(),
+            ServerEvent::Tick => Ok(self.handle_tick()),
         }
     }
 
     /// Handle a new connection being accepted.
-    fn handle_connection_accepted(
-        &mut self,
-        session_id: u64,
-    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
+    fn handle_connection_accepted(&mut self, session_id: u64) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
 
         if self.connections.len() >= self.config.max_connections {
-            return Ok(vec![ServerAction::CloseConnection {
+            return vec![ServerAction::CloseConnection {
                 session_id,
                 reason: "max connections exceeded".to_string(),
-            }]);
+            }];
         }
 
         let mut conn = Connection::new(now, self.config.connection.clone());
@@ -206,14 +208,15 @@ where
         self.connections.insert(session_id, conn);
         self.registry.register_session(session_id, SessionInfo::new());
 
-        Ok(vec![ServerAction::Log {
+        vec![ServerAction::Log {
             level: LogLevel::Debug,
             message: format!("connection {session_id} accepted, session_id={session_id}"),
             timestamp: now,
-        }])
+        }]
     }
 
     /// Handle a frame received from a connection.
+    #[allow(clippy::too_many_lines)]
     fn handle_frame_received(
         &mut self,
         session_id: u64,
@@ -248,7 +251,7 @@ where
 
                 if opcode == Some(Opcode::Hello) {
                     // Update session with authenticated user_id for reverse lookup
-                    let user_id = conn.client_sender_id().or(conn.session_id());
+                    let user_id = conn.client_sender_id().or_else(|| conn.session_id());
                     if let Some(user_id) = user_id {
                         let new_info = SessionInfo::authenticated(user_id);
                         self.registry.update_session_info(session_id, new_info);
@@ -372,7 +375,7 @@ where
         let now = self.env.now();
 
         let result = (|| -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
-            let payload = Payload::from_frame(frame.clone())?;
+            let payload = Payload::from_frame(&frame.clone())?;
             let (from_log_index, limit) = match payload {
                 Payload::SyncRequest(req) => (req.from_log_index, req.limit as usize),
                 _ => {
@@ -406,16 +409,10 @@ where
     ) -> Vec<ServerAction<E::Instant>> {
         let error_payload = match error {
             ServerError::Room(room_err) => match room_err {
-                crate::room_manager::RoomError::RoomNotFound(_) => {
-                    ErrorPayload::room_not_found(room_id)
-                },
-                crate::room_manager::RoomError::Storage(e) => {
-                    ErrorPayload::storage_error(e.to_string())
-                },
-                crate::room_manager::RoomError::Sequencing(e) => {
-                    ErrorPayload::sequencer_error(e.to_string())
-                },
-                _ => ErrorPayload::frame_rejected(error.to_string()),
+                RoomError::RoomNotFound(_) => ErrorPayload::room_not_found(room_id),
+                RoomError::Storage(e) => ErrorPayload::storage_error(e.to_string()),
+                RoomError::Sequencing(e) => ErrorPayload::sequencer_error(e.to_string()),
+                RoomError::RoomAlreadyExists(e) => ErrorPayload::frame_rejected(e.to_string()),
             },
             ServerError::Protocol(msg) => ErrorPayload::invalid_payload(msg),
             _ => ErrorPayload::frame_rejected(error.to_string()),
@@ -442,7 +439,7 @@ where
 
     /// Handle `KeyPackage` publish request.
     fn handle_key_package_publish(
-        &mut self,
+        &self,
         session_id: u64,
         frame: &Frame,
     ) -> Vec<ServerAction<E::Instant>> {
@@ -489,7 +486,7 @@ where
             };
         };
 
-        let payload = match Payload::from_frame(frame.clone()) {
+        let payload = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::KeyPackagePublish(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -556,14 +553,13 @@ where
 
     /// Handle `KeyPackage` fetch request.
     fn handle_key_package_fetch(
-        &mut self,
+        &self,
         session_id: u64,
         frame: &Frame,
     ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
 
-        // Decode request
-        let request = match Payload::from_frame(frame.clone()) {
+        let request = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::KeyPackageFetch(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -615,7 +611,6 @@ where
 
         // Fetch (and consume) from registry
         if let Some(entry) = self.key_package_registry.take(request.user_id) {
-            // Build response
             let response = Payload::KeyPackageFetch(KeyPackageFetchPayload {
                 user_id: request.user_id,
                 key_package_bytes: entry.key_package_bytes,
@@ -667,14 +662,14 @@ where
     /// creation. The server creates the room in `RoomManager` and subscribes
     /// the creator.
     fn handle_group_info_publish(
-        &mut self,
+        &self,
         session_id: u64,
         frame: &Frame,
     ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
-        let payload = match Payload::from_frame(frame.clone()) {
+        let payload = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::GroupInfo(info)) => info,
             Ok(_) => {
                 return vec![ServerAction::Log {
@@ -720,16 +715,15 @@ where
     }
 
     /// Handle `GroupInfo` request (fetch `GroupInfo` for external joiners).
+    #[allow(clippy::too_many_lines)] // TODO: we should refactor this
     fn handle_group_info_request(
-        &mut self,
+        &self,
         session_id: u64,
         frame: &Frame,
     ) -> Vec<ServerAction<E::Instant>> {
-        use lockframe_proto::payloads::mls::GroupInfoPayload;
-
         let now = self.env.now();
 
-        let request = match Payload::from_frame(frame.clone()) {
+        let request = match Payload::from_frame(&frame.clone()) {
             Ok(Payload::GroupInfoRequest(req)) => req,
             Ok(_) => {
                 let error = Payload::Error(ErrorPayload::invalid_payload(
@@ -844,7 +838,7 @@ where
         &mut self,
         session_id: u64,
         reason: &str,
-    ) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
+    ) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -865,11 +859,11 @@ where
             });
         }
 
-        Ok(actions)
+        actions
     }
 
     /// Handle periodic tick for timeout checking.
-    fn handle_tick(&mut self) -> Result<Vec<ServerAction<E::Instant>>, ServerError> {
+    fn handle_tick(&mut self) -> Vec<ServerAction<E::Instant>> {
         let now = self.env.now();
         let mut actions = Vec::new();
 
@@ -892,7 +886,7 @@ where
             }
         }
 
-        Ok(actions)
+        actions
     }
 
     /// Convert a `RoomAction` to `ServerActions`.
@@ -1041,7 +1035,6 @@ where
     ///
     /// Returns `None` - server is routing-only and doesn't track MLS epoch.
     /// Clients own their MLS state and track epochs.
-    #[allow(clippy::unused_self)]
     pub fn room_epoch(&self, _room_id: u128) -> Option<u64> {
         None
     }
@@ -1092,6 +1085,7 @@ where
     }
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl<E, S> std::fmt::Debug for ServerDriver<E, S>
 where
     E: Environment,

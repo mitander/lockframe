@@ -47,7 +47,7 @@ impl QuinnTransport {
     ///
     /// If `cert_path` and `key_path` are provided, they will be used for TLS.
     /// Otherwise, a self-signed certificate will be generated for testing.
-    pub async fn bind(
+    pub fn bind(
         address: &str,
         cert_path: Option<String>,
         key_path: Option<String>,
@@ -211,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn transport_binds_with_self_signed() {
-        let transport = QuinnTransport::bind("127.0.0.1:0", None, None).await;
+        let transport = QuinnTransport::bind("127.0.0.1:0", None, None);
         assert!(transport.is_ok(), "Transport should bind with self-signed cert");
 
         let transport = transport.unwrap();
@@ -221,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn transport_rejects_invalid_address() {
-        let result = QuinnTransport::bind("invalid:address:format", None, None).await;
+        let result = QuinnTransport::bind("invalid:address:format", None, None);
         assert!(result.is_err(), "Should reject invalid address");
     }
 }

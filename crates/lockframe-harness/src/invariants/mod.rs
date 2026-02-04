@@ -41,7 +41,7 @@ pub enum InvariantKind {
 
 impl InvariantKind {
     /// Human-readable name of the invariant.
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::ActiveRoomInRooms => "active_room_in_rooms",
             Self::EpochMonotonicity => "epoch_monotonicity",

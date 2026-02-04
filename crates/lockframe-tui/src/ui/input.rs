@@ -16,7 +16,6 @@ const INPUT_LINE_OFFSET_Y: u16 = 1; // inside top border
 const RIGHT_PADDING: u16 = 1; // inside right border
 
 /// Render the input line.
-#[allow(clippy::cast_possible_truncation)]
 pub fn render(frame: &mut Frame, input: &InputState, area: Rect) {
     let block = Block::default().borders(Borders::ALL);
 

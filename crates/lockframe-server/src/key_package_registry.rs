@@ -4,6 +4,9 @@
 //! `KeyPackages` are consumed (deleted) after fetch to enforce one-time use.
 //! Enforces capacity limits with LRU eviction to prevent unbounded growth.
 
+#![allow(clippy::disallowed_types, reason = "Synchronous in-memory operations only")]
+#![allow(clippy::expect_used, reason = "Mutex poisoning should cause a panic")]
+
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
@@ -63,6 +66,12 @@ struct KeyPackageRegistryInner {
     max_capacity: usize,
     /// Monotonic counter for timestamps.
     timestamp_counter: u64,
+}
+
+impl Default for KeyPackageRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyPackageRegistry {

@@ -66,8 +66,7 @@ impl ConnectionRegistry {
     /// Returns `false` if:
     /// - Session already exists, or
     /// - The session has a `user_id` and that user is already associated with
-    ///   another session
-    /// (enforces one session per user).
+    ///   another session (enforces one session per user).
     pub fn register_session(&mut self, session_id: u64, info: SessionInfo) -> bool {
         if self.sessions.contains_key(&session_id) {
             return false;

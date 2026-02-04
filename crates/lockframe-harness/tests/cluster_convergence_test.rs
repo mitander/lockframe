@@ -84,7 +84,7 @@ proptest! {
 
         for i in 1..=num_joiners {
             cluster.join_via_welcome(ROOM_ID, i)
-                .unwrap_or_else(|e| panic!("join {i} failed: {e}"));
+                .expect("join failed");
         }
 
         // ORACLE: All converged
@@ -107,7 +107,7 @@ proptest! {
 
         for i in 1..=num_joiners {
             cluster.join_via_external(ROOM_ID, i)
-                .unwrap_or_else(|e| panic!("join {i} failed: {e}"));
+                .expect("join failed");
         }
 
         // ORACLE: All converged
@@ -137,15 +137,15 @@ proptest! {
             let joiner_idx = i + 1;
             if *use_welcome {
                 cluster.join_via_welcome(ROOM_ID, joiner_idx)
-                    .unwrap_or_else(|e| panic!("Welcome join {joiner_idx} failed: {e}"));
+                    .expect("Welcome join {joiner_idx} failed: {e}");
             } else {
                 cluster.join_via_external(ROOM_ID, joiner_idx)
-                    .unwrap_or_else(|e| panic!("External join {joiner_idx} failed: {e}"));
+                    .expect("External join {joiner_idx} failed: {e}");
             }
 
             // ORACLE: Convergence must hold after EVERY join operation
             verify_convergence(&cluster)
-                .unwrap_or_else(|e| panic!("Convergence failed after join {joiner_idx}: {e}"));
+                .expect("Convergence failed after join {joiner_idx}: {e}");
         }
 
         // ORACLE: Final state is fully converged
@@ -155,7 +155,7 @@ proptest! {
         for sender in 0..num_clients {
             let msg = format!("msg from {sender}");
             cluster.send_and_verify(ROOM_ID, sender, msg.as_bytes())
-                .unwrap_or_else(|e| panic!("Messaging from {sender} failed: {e}"));
+                .expect("Messaging from {sender} failed: {e}");
         }
     }
 }

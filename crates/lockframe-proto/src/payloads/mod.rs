@@ -408,7 +408,7 @@ impl Payload {
     /// - `ProtocolError::CborDecode` if opcode is invalid or unsupported
     /// - `ProtocolError::CborDecode` if CBOR deserialization fails
     /// - `ProtocolError::PayloadTooLarge` if payload exceeds maximum size
-    pub fn from_frame(frame: Frame) -> Result<Self> {
+    pub fn from_frame(frame: &Frame) -> Result<Self> {
         let opcode = frame.header.opcode_enum().ok_or_else(|| {
             ProtocolError::CborDecode(format!("Invalid opcode: {:#06x}", frame.header.opcode()))
         })?;
@@ -432,7 +432,7 @@ mod tests {
 
         // Convert to frame and back
         let frame = payload.clone().into_frame(header).expect("should create frame");
-        let decoded = Payload::from_frame(frame).expect("should parse payload");
+        let decoded = Payload::from_frame(&frame).expect("should parse payload");
         assert_eq!(payload, decoded);
     }
 
@@ -452,7 +452,7 @@ mod tests {
 
         // Convert to frame and back
         let frame = payload.clone().into_frame(header).expect("should create frame");
-        let decoded = Payload::from_frame(frame).expect("should parse payload");
+        let decoded = Payload::from_frame(&frame).expect("should parse payload");
         assert_eq!(payload, decoded);
     }
 }

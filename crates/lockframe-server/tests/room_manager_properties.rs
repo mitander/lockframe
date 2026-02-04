@@ -84,7 +84,7 @@ proptest! {
         seed in any::<u64>(),
         room_id in 1u128..,
         sender_id in 1u64..1000,
-        epoch in 0u64..1000000,
+        epoch in 0u64..1_000_000,
         payload in prop::collection::vec(any::<u8>(), 0..256)
     ) {
         let env = SimEnv::with_seed(seed);
@@ -185,7 +185,7 @@ proptest! {
         seed in any::<u64>(),
         room_id in 1u128..,
         creator in 1u64..1000,
-        epoch in 0u64..1000000,
+        epoch in 0u64..1_000_000,
         payload in prop::collection::vec(any::<u8>(), 0..256)
     ) {
         let env = SimEnv::with_seed(seed);

@@ -148,9 +148,8 @@ impl ModelWorld {
     /// Note: Each client can independently create a room with the same ID.
     /// There is no centralized room registry - room creation is local.
     fn apply_create_room(&mut self, client_id: ClientId, room_id: ModelRoomId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if client.is_disconnected() {
@@ -231,9 +230,8 @@ impl ModelWorld {
     ///
     /// Self-initiated departure. Advances epoch.
     fn apply_leave_room(&mut self, client_id: ClientId, room_id: ModelRoomId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         let result = client.leave_room(room_id);
@@ -258,22 +256,22 @@ impl ModelWorld {
     /// Inviter adds invitee to the room. Advances epoch.
     fn apply_add_member(
         &mut self,
-        inviter_id: ClientId,
-        invitee_id: ClientId,
+        sender_id: ClientId,
+        recipient_id: ClientId,
         room_id: ModelRoomId,
     ) -> OperationResult {
-        if inviter_id as usize >= self.clients.len() {
+        if sender_id as usize >= self.clients.len() {
             return OperationResult::Error(OperationError::InvalidClient);
         }
-        if invitee_id as usize >= self.clients.len() {
+        if recipient_id as usize >= self.clients.len() {
             return OperationResult::Error(OperationError::InvalidClient);
         }
 
-        if !self.clients[inviter_id as usize].is_member(room_id) {
+        if !self.clients[sender_id as usize].is_member(room_id) {
             return OperationResult::Error(OperationError::NotMember);
         }
 
-        if self.clients[invitee_id as usize].is_member(room_id) {
+        if self.clients[recipient_id as usize].is_member(room_id) {
             return OperationResult::Error(OperationError::AlreadyMember);
         }
 
@@ -286,8 +284,8 @@ impl ModelWorld {
             }
         }
 
-        self.server.add_member(room_id, invitee_id);
-        let _ = self.clients[invitee_id as usize].join_room_at_epoch(room_id, new_epoch);
+        self.server.add_member(room_id, recipient_id);
+        let _ = self.clients[recipient_id as usize].join_room_at_epoch(room_id, new_epoch);
 
         OperationResult::Ok
     }
@@ -385,9 +383,8 @@ impl ModelWorld {
 
     /// Partition a client from the server.
     fn apply_partition(&mut self, client_id: ClientId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if client.is_disconnected() {
@@ -400,9 +397,8 @@ impl ModelWorld {
 
     /// Heal a partition, restoring connectivity.
     fn apply_heal_partition(&mut self, client_id: ClientId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if client.is_disconnected() {
@@ -415,9 +411,8 @@ impl ModelWorld {
 
     /// Disconnect a client, removing from all rooms.
     fn apply_disconnect(&mut self, client_id: ClientId) -> OperationResult {
-        let client = match self.clients.get_mut(client_id as usize) {
-            Some(c) => c,
-            None => return OperationResult::Error(OperationError::InvalidClient),
+        let Some(client) = self.clients.get_mut(client_id as usize) else {
+            return OperationResult::Error(OperationError::InvalidClient);
         };
 
         if client.is_disconnected() {

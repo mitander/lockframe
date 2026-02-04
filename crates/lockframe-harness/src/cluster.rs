@@ -63,7 +63,7 @@ impl TestCluster {
         for action in &actions {
             if let ClientAction::Send(frame) = action
                 && frame.header.opcode_enum() == Some(Opcode::GroupInfo)
-                && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame.clone())
+                && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame)
             {
                 self.store_group_info(room_id, payload.epoch, payload.group_info_bytes);
             }
@@ -88,8 +88,8 @@ impl TestCluster {
         for action in &add_actions {
             if let ClientAction::Send(frame) = action {
                 match frame.header.opcode_enum() {
-                    Some(Opcode::Welcome) => welcome_frame = Some(frame.clone()),
-                    Some(Opcode::Commit) => commit_frame = Some(frame.clone()),
+                    Some(Opcode::Welcome) => welcome_frame = Some(frame),
+                    Some(Opcode::Commit) => commit_frame = Some(frame),
                     _ => {},
                 }
             }
@@ -106,9 +106,11 @@ impl TestCluster {
         for action in &commit_actions {
             if let ClientAction::Send(frame) = action
                 && frame.header.opcode_enum() == Some(Opcode::GroupInfo)
-                && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame.clone())
+                && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame)
             {
-                self.store_group_info(room_id, payload.epoch, payload.group_info_bytes);
+                {
+                    self.store_group_info(room_id, payload.epoch, payload.group_info_bytes);
+                }
             }
         }
 
@@ -155,7 +157,7 @@ impl TestCluster {
                     Some(Opcode::Commit | Opcode::ExternalCommit)
                 )
             {
-                ext_commit = Some(frame.clone());
+                ext_commit = Some(frame);
             }
         }
 
@@ -171,7 +173,7 @@ impl TestCluster {
                 for action in &commit_actions {
                     if let ClientAction::Send(frame) = action
                         && frame.header.opcode_enum() == Some(Opcode::GroupInfo)
-                        && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame.clone())
+                        && let Ok(Payload::GroupInfo(payload)) = Payload::from_frame(frame)
                     {
                         joiner_group_info = Some((payload.epoch, payload.group_info_bytes));
                     }

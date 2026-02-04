@@ -1,5 +1,7 @@
 //! Turmoil-based Environment implementation for deterministic testing.
 
+#![allow(clippy::disallowed_types, reason = "Synchronous in-memory operations only")]
+
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -74,7 +76,7 @@ impl Environment for SimEnv {
     fn wall_clock_secs(&self) -> u64 {
         // For simulation, return a fixed timestamp (2024-01-01 00:00:00 UTC)
         // Virtual time in turmoil is relative, not absolute
-        1704067200
+        1_704_067_200
     }
 }
 

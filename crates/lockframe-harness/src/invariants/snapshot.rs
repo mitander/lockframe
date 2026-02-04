@@ -20,16 +20,19 @@ pub struct SystemSnapshot {
 
 impl SystemSnapshot {
     /// Create an empty snapshot (no clients).
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
 
     /// Create a snapshot with a single client.
+    #[must_use]
     pub fn single(client: ClientSnapshot) -> Self {
         Self { clients: vec![client] }
     }
 
     /// Create a snapshot from multiple clients.
+    #[must_use]
     pub fn from_clients(clients: Vec<ClientSnapshot>) -> Self {
         Self { clients }
     }
@@ -55,17 +58,20 @@ pub struct ClientSnapshot {
 
 impl ClientSnapshot {
     /// Create a new client snapshot.
+    #[must_use]
     pub fn new(id: u64) -> Self {
         Self { id, ..Default::default() }
     }
 
     /// Set active room.
+    #[must_use]
     pub fn with_active_room(mut self, room_id: Option<RoomId>) -> Self {
         self.active_room = room_id;
         self
     }
 
     /// Add a room to the snapshot.
+    #[must_use]
     pub fn with_room(mut self, room_id: RoomId, snapshot: RoomSnapshot) -> Self {
         self.rooms.insert(room_id, snapshot);
         self
@@ -94,29 +100,34 @@ pub struct RoomSnapshot {
 
 impl RoomSnapshot {
     /// Create a room snapshot with the given epoch.
+    #[must_use]
     pub fn with_epoch(epoch: u64) -> Self {
         Self { epoch, ..Default::default() }
     }
 
     /// Set tree hash.
+    #[must_use]
     pub fn with_tree_hash(mut self, hash: [u8; 32]) -> Self {
         self.tree_hash = hash;
         self
     }
 
     /// Add members.
+    #[must_use]
     pub fn with_members(mut self, members: impl IntoIterator<Item = u64>) -> Self {
         self.members.extend(members);
         self
     }
 
     /// Set message count.
+    #[must_use]
     pub fn with_message_count(mut self, count: usize) -> Self {
         self.message_count = count;
         self
     }
 
     /// Add received log indices.
+    #[must_use]
     pub fn with_log_indices(mut self, indices: impl IntoIterator<Item = u64>) -> Self {
         self.log_indices.extend(indices);
         self
@@ -137,8 +148,7 @@ mod tests {
     fn client_snapshot_builder() {
         let room = RoomSnapshot::with_epoch(5).with_members([1, 2, 3]).with_message_count(10);
 
-        let client =
-            ClientSnapshot::new(42).with_active_room(Some(100)).with_room(100, room.clone());
+        let client = ClientSnapshot::new(42).with_active_room(Some(100)).with_room(100, room);
 
         assert_eq!(client.id, 42);
         assert_eq!(client.active_room, Some(100));
