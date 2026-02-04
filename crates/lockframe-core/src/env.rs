@@ -293,7 +293,40 @@ pub mod test_utils {
         #[test]
         fn mock_env_wall_clock_secs_returns_fixed_value() {
             let env = MockEnv::new();
-            assert_eq!(env.wall_clock_secs(), 1_704_067_200, "wall_clock_secs should return a fixed timestamp for testing");
+            assert_eq!(
+                env.wall_clock_secs(),
+                1_704_067_200,
+                "wall_clock_secs should return a fixed timestamp for testing"
+            );
+        }
+
+        #[test]
+        fn virtual_instant_from_duration_and_since_epoch() {
+            let duration = Duration::from_secs(10);
+            let instant = VirtualInstant::from_duration(duration);
+            assert_eq!(instant.since_epoch(), duration);
+        }
+
+        #[test]
+        fn virtual_instant_add_duration() {
+            let initial_duration = Duration::from_secs(5);
+            let add_duration = Duration::from_secs(3);
+            let instant = VirtualInstant::from_duration(initial_duration);
+            let new_instant = instant + add_duration;
+            assert_eq!(new_instant.since_epoch(), initial_duration + add_duration);
+        }
+
+        #[test]
+        fn mock_env_default_initializes_correctly() {
+            let env_default = MockEnv::default();
+            let env_new = MockEnv::new();
+
+            // Both new and default should start with the same RNG seed and initial time
+            assert_eq!(
+                env_default.random_u64(),
+                env_new.random_u64(),
+                "Default and new MockEnv should have identical initial RNG state"
+            );
         }
     }
 }
