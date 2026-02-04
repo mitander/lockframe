@@ -1,7 +1,7 @@
 # lockframe
 
-[![CI](https://github.com/lockframe-protocol/lockframe/actions/workflows/ci.yml/badge.svg)](https://github.com/lockframe-protocol/lockframe/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/lockframe-protocol/lockframe/branch/master/graph/badge.svg)](https://codecov.io/gh/lockframe-protocol/lockframe)
+[![CI](https://github.com/mitander/lockframe/actions/workflows/ci.yml/badge.svg)](https://github.com/mitander/lockframe/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mitander/lockframe/branch/master/graph/badge.svg)](https://codecov.io/gh/mitander/lockframe)
 
 A high-assurance messaging protocol combining **End-to-End Encryption** with **Server-Side Moderation**.
 
